@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Loup-Garou en Ligne</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #1a1a2e;
+            color: #e94560;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+        .container {
+            background-color: #16213e;
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+            width: 100%;
+            max-width: 400px;
+            text-align: center;
+        }
+        h1 {
+            margin-bottom: 1.5rem;
+            color: #e94560;
+        }
+        .form-group {
+            margin-bottom: 1rem;
+            text-align: left;
+        }
+        label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: bold;
+        }
+        input {
+            width: 100%;
+            padding: 0.8rem;
+            border: none;
+            border-radius: 5px;
+            background-color: #0f3460;
+            color: white;
+            box-sizing: border-box;
+        }
+        input:focus {
+            outline: 2px solid #e94560;
+        }
+        button {
+            width: 100%;
+            padding: 1rem;
+            border: none;
+            border-radius: 5px;
+            background-color: #e94560;
+            color: white;
+            font-size: 1rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background-color 0.3s;
+            margin-top: 1rem;
+        }
+        button:hover {
+            background-color: #cf3a54;
+        }
+        .footer {
+            margin-top: 1.5rem;
+            font-size: 0.8rem;
+            color: #533483;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Loup-Garou</h1>
+        <form id="join-form">
+            <div class="form-group">
+                <label for="pseudo">Votre Pseudo</label>
+                <input type="text" id="pseudo" name="pseudo" placeholder="Ex: Jean_Loup" required>
+            </div>
+            <div class="form-group">
+                <label for="game-password">Mot de passe de la partie</label>
+                <input type="password" id="game-password" name="game-password" placeholder="Mot de passe commun" required>
+            </div>
+            <button type="submit">Rejoindre la meute</button>
+        </form>
+        <div class="footer">
+            Préparez-vous, la nuit tombe...
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('join-form').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const pseudo = document.getElementById('pseudo').value;
+            const password = document.getElementById('game-password').value;
+            
+            console.log('Tentative de connexion :', { pseudo, password });
+            alert('Connexion en cours pour ' + pseudo + '...');
+            // La suite de la logique (WebSocket, API, etc.) viendra ici
+        });
+    </script>
+</body>
+</html>
