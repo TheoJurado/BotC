@@ -129,6 +129,7 @@
         <div class="lobby-password" id="lobby-password"></div>
         <h2>Joueurs connectés</h2>
         <ul class="players" id="players-list"></ul>
+        <button type="button" id="start-game">Lancer la partie</button>
         <button type="button" id="leave-lobby">Quitter le lobby</button>
     </div>
 
@@ -173,6 +174,7 @@
         const message = document.getElementById('message');
         const lobbyPassword = document.getElementById('lobby-password');
         const playersList = document.getElementById('players-list');
+        const startGameButton = document.getElementById('start-game');
         const gamesCollectionName = 'games';
         const playerId = sessionStorage.getItem('botc-player-id') || crypto.randomUUID();
         let currentPlayer = null;
@@ -188,6 +190,7 @@
         function renderLobby(lobby) {
             lobbyPassword.textContent = lobby.password;
             playersList.innerHTML = '';
+            startGameButton.classList.toggle('hidden', Boolean(lobby.gameIsRunning) || !currentPlayer || currentPlayer.id !== lobby.hostId);
 
             (lobby.players || []).forEach(function(player) {
                 const playerItem = document.createElement('li');
@@ -319,7 +322,8 @@
                         password: password,
                         hostId: playerId,
                         players: [player],
-                        createdAt: serverTimestamp()
+                        createdAt: serverTimestamp(),
+                        gameIsRunning: false
                     });
                     transaction.set(getPlayerReference(lobbyReference.id), createPlayerData(pseudo));
                 });
@@ -362,6 +366,10 @@
                     const lobbyData = currentLobby.data();
                     const players = lobbyData.players || [];
 
+                    if (lobbyData.gameIsRunning === true) {
+                        throw new Error('PARTIE_DEJA_LANCEE');
+                    }
+
                     if (players.some(function(existingPlayer) {
                         return existingPlayer.pseudo.toLowerCase() === pseudo.toLowerCase();
                     })) {
@@ -377,10 +385,41 @@
             } catch (error) {
                 if (error.message === 'PSEUDO_DEJA_UTILISE') {
                     showMessage('Ce pseudo est déjà utilisé dans le lobby.');
+                } else if (error.message === 'PARTIE_DEJA_LANCEE') {
+                    showMessage('Cette partie a déjà été lancée.');
                 } else {
                     showMessage('Impossible de rejoindre la partie. Vérifiez le mot de passe.');
                     console.error(error);
                 }
+            }
+        });
+
+        startGameButton.addEventListener('click', async function() {
+            if (!currentLobbyId || !currentPlayer) {
+                return;
+            }
+
+            try {
+                await runTransaction(db, async function(transaction) {
+                    const lobbyReference = doc(db, gamesCollectionName, currentLobbyId);
+                    const lobbySnapshot = await transaction.get(lobbyReference);
+                    const lobby = lobbySnapshot.data();
+
+                    if (!lobby || lobby.hostId !== currentPlayer.id) {
+                        throw new Error('HOTE_REQUIS');
+                    }
+
+                    if (lobby.gameIsRunning === true) {
+                        return;
+                    }
+
+                    transaction.update(lobbyReference, {
+                        gameIsRunning: true
+                    });
+                });
+            } catch (error) {
+                showMessage('Seul l’hôte peut lancer la partie.');
+                console.error(error);
             }
         });
 
