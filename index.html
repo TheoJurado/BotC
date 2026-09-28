@@ -24,6 +24,9 @@
             max-width: 400px;
             text-align: center;
         }
+        .hidden {
+            display: none;
+        }
         h1 {
             margin-bottom: 1.5rem;
             color: #e94560;
@@ -70,10 +73,38 @@
             font-size: 0.8rem;
             color: #533483;
         }
+        .footer a {
+            color: inherit;
+            text-decoration: none;
+        }
+        .message {
+            min-height: 1.2rem;
+            margin: 1rem 0 0;
+            color: #f5c542;
+            font-size: 0.9rem;
+        }
+        .lobby-password {
+            margin: 1rem 0;
+            padding: 0.8rem;
+            background-color: #0f3460;
+            color: white;
+            font-weight: bold;
+            letter-spacing: 0.08rem;
+        }
+        .players {
+            margin: 1.5rem 0;
+            padding: 0;
+            color: white;
+            list-style: none;
+        }
+        .players li {
+            padding: 0.45rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+        }
     </style>
 </head>
 <body>
-    <div class="container">
+    <div class="container" id="home-view">
         <h1>Blood on the Clocktower</h1>
         <form id="join-form">
             <div class="form-group">
@@ -86,20 +117,148 @@
             </div>
             <button type="submit">Rejoindre la partie</button>
         </form>
+        <p class="message" id="message" role="status"></p>
         <div class="footer">
-            Préparez-vous, la nuit tombe...
+            <a href="#" id="create-game">Créer une partie</a>
         </div>
     </div>
 
+    <div class="container hidden" id="lobby-view">
+        <h1>Lobby</h1>
+        <p>Mot de passe de la partie :</p>
+        <div class="lobby-password" id="lobby-password"></div>
+        <h2>Joueurs connectés</h2>
+        <ul class="players" id="players-list"></ul>
+        <button type="button" id="leave-lobby">Quitter le lobby</button>
+    </div>
+
     <script>
-        document.getElementById('join-form').addEventListener('submit', function(e) {
+        const lobbyStorageKey = 'botc-lobby';
+        const homeView = document.getElementById('home-view');
+        const lobbyView = document.getElementById('lobby-view');
+        const joinForm = document.getElementById('join-form');
+        const pseudoInput = document.getElementById('pseudo');
+        const passwordInput = document.getElementById('game-password');
+        const message = document.getElementById('message');
+        const lobbyPassword = document.getElementById('lobby-password');
+        const playersList = document.getElementById('players-list');
+        let currentPlayer = '';
+
+        function showMessage(text) {
+            message.textContent = text;
+        }
+
+        function getLobby() {
+            const storedLobby = localStorage.getItem(lobbyStorageKey);
+            return storedLobby ? JSON.parse(storedLobby) : null;
+        }
+
+        function saveLobby(lobby) {
+            localStorage.setItem(lobbyStorageKey, JSON.stringify(lobby));
+        }
+
+        function renderLobby(lobby) {
+            lobbyPassword.textContent = lobby.password;
+            playersList.innerHTML = '';
+
+            lobby.players.forEach(function(player) {
+                const playerItem = document.createElement('li');
+                playerItem.textContent = player;
+                playersList.appendChild(playerItem);
+            });
+        }
+
+        function enterLobby(player) {
+            currentPlayer = player;
+            homeView.classList.add('hidden');
+            lobbyView.classList.remove('hidden');
+            renderLobby(getLobby());
+        }
+
+        document.getElementById('create-game').addEventListener('click', function(e) {
             e.preventDefault();
-            const pseudo = document.getElementById('pseudo').value;
-            const password = document.getElementById('game-password').value;
-            
-            console.log('Tentative de connexion :', { pseudo, password });
-            alert('Connexion en cours pour ' + pseudo + '...');
-            // La suite de la logique (WebSocket, API, etc.) viendra ici
+            const pseudo = pseudoInput.value.trim();
+            let password = passwordInput.value.trim();
+
+            if (!pseudo) {
+                showMessage('Veuillez entrer votre pseudo avant de créer une partie.');
+                pseudoInput.focus();
+                return;
+            }
+
+            if (!password) {
+                password = Math.random().toString(36).slice(2, 8).toUpperCase();
+                passwordInput.value = password;
+            }
+
+            const lobby = {
+                password: password,
+                players: [pseudo]
+            };
+            saveLobby(lobby);
+            enterLobby(pseudo);
+        });
+
+        joinForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            const pseudo = pseudoInput.value.trim();
+            const password = passwordInput.value.trim();
+            const lobby = getLobby();
+
+            if (!pseudo || !password) {
+                showMessage('Veuillez entrer votre pseudo et le mot de passe de la partie.');
+                return;
+            }
+
+            if (!lobby) {
+                showMessage('Aucune partie n’est actuellement disponible.');
+                return;
+            }
+
+            if (password !== lobby.password) {
+                showMessage('Le mot de passe de la partie est incorrect.');
+                return;
+            }
+
+            if (lobby.players.includes(pseudo)) {
+                showMessage('Ce pseudo est déjà utilisé dans le lobby.');
+                return;
+            }
+
+            lobby.players.push(pseudo);
+            saveLobby(lobby);
+            enterLobby(pseudo);
+        });
+
+        document.getElementById('leave-lobby').addEventListener('click', function() {
+            const lobby = getLobby();
+
+            if (lobby) {
+                lobby.players = lobby.players.filter(function(player) {
+                    return player !== currentPlayer;
+                });
+
+                if (lobby.players.length === 0) {
+                    localStorage.removeItem(lobbyStorageKey);
+                } else {
+                    saveLobby(lobby);
+                }
+            }
+
+            currentPlayer = '';
+            lobbyView.classList.add('hidden');
+            homeView.classList.remove('hidden');
+            showMessage('');
+        });
+
+        window.addEventListener('storage', function(e) {
+            if (e.key === lobbyStorageKey && !lobbyView.classList.contains('hidden')) {
+                const lobby = getLobby();
+
+                if (lobby) {
+                    renderLobby(lobby);
+                }
+            }
         });
     </script>
 </body>
