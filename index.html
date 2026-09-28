@@ -132,8 +132,39 @@
         <button type="button" id="leave-lobby">Quitter le lobby</button>
     </div>
 
-    <script>
-        const lobbyStorageKey = 'botc-lobby';
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js';
+        import { getAuth, signInAnonymously } from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js';
+        import {
+            addDoc,
+            arrayRemove,
+            collection,
+            deleteDoc,
+            doc,
+            getDoc,
+            getDocs,
+            getFirestore,
+            limit,
+            onSnapshot,
+            query,
+            runTransaction,
+            serverTimestamp,
+            updateDoc,
+            where
+        } from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js';
+
+        const firebaseConfig = {
+            apiKey: 'AIzaSyDF5NAQxCnR1k3znzhOImNCeJn0jD2EqTM',
+            authDomain: 'botc-database-gamemaster.firebaseapp.com',
+            projectId: 'botc-database-gamemaster',
+            storageBucket: 'botc-database-gamemaster.firebasestorage.app',
+            messagingSenderId: '1089060485131',
+            appId: '1:1089060485131:web:21c8fa56a336901ddc6f0e'
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
         const homeView = document.getElementById('home-view');
         const lobbyView = document.getElementById('lobby-view');
         const joinForm = document.getElementById('join-form');
@@ -142,40 +173,76 @@
         const message = document.getElementById('message');
         const lobbyPassword = document.getElementById('lobby-password');
         const playersList = document.getElementById('players-list');
-        let currentPlayer = '';
+        const playerId = sessionStorage.getItem('botc-player-id') || crypto.randomUUID();
+        let currentPlayer = null;
+        let currentLobbyId = '';
+        let stopLobbyListener = null;
+
+        sessionStorage.setItem('botc-player-id', playerId);
 
         function showMessage(text) {
             message.textContent = text;
-        }
-
-        function getLobby() {
-            const storedLobby = localStorage.getItem(lobbyStorageKey);
-            return storedLobby ? JSON.parse(storedLobby) : null;
-        }
-
-        function saveLobby(lobby) {
-            localStorage.setItem(lobbyStorageKey, JSON.stringify(lobby));
         }
 
         function renderLobby(lobby) {
             lobbyPassword.textContent = lobby.password;
             playersList.innerHTML = '';
 
-            lobby.players.forEach(function(player) {
+            (lobby.players || []).forEach(function(player) {
                 const playerItem = document.createElement('li');
-                playerItem.textContent = player;
+                playerItem.textContent = player.pseudo;
                 playersList.appendChild(playerItem);
             });
         }
 
-        function enterLobby(player) {
+        function subscribeToLobby(lobbyId) {
+            if (stopLobbyListener) {
+                stopLobbyListener();
+            }
+
+            currentLobbyId = lobbyId;
+            sessionStorage.setItem('botc-lobby-id', lobbyId);
+            stopLobbyListener = onSnapshot(doc(db, 'lobbies', lobbyId), function(snapshot) {
+                if (!snapshot.exists()) {
+                    leaveLobbyView();
+                    showMessage('Cette partie n’est plus disponible.');
+                    return;
+                }
+
+                renderLobby(snapshot.data());
+            }, function() {
+                showMessage('Impossible de suivre les changements du lobby.');
+            });
+        }
+
+        function enterLobby(lobbyId, player) {
             currentPlayer = player;
             homeView.classList.add('hidden');
             lobbyView.classList.remove('hidden');
-            renderLobby(getLobby());
+            showMessage('');
+            subscribeToLobby(lobbyId);
         }
 
-        document.getElementById('create-game').addEventListener('click', function(e) {
+        function leaveLobbyView() {
+            if (stopLobbyListener) {
+                stopLobbyListener();
+                stopLobbyListener = null;
+            }
+
+            currentLobbyId = '';
+            currentPlayer = null;
+            sessionStorage.removeItem('botc-lobby-id');
+            lobbyView.classList.add('hidden');
+            homeView.classList.remove('hidden');
+        }
+
+        async function ensureSignedIn() {
+            if (!auth.currentUser) {
+                await signInAnonymously(auth);
+            }
+        }
+
+        document.getElementById('create-game').addEventListener('click', async function(e) {
             e.preventDefault();
             const pseudo = pseudoInput.value.trim();
             let password = passwordInput.value.trim();
@@ -191,74 +258,120 @@
                 passwordInput.value = password;
             }
 
-            const lobby = {
-                password: password,
-                players: [pseudo]
-            };
-            saveLobby(lobby);
-            enterLobby(pseudo);
+            try {
+                await ensureSignedIn();
+                const player = { id: playerId, pseudo: pseudo };
+                const lobby = await addDoc(collection(db, 'lobbies'), {
+                    password: password,
+                    hostId: playerId,
+                    players: [player],
+                    createdAt: serverTimestamp()
+                });
+                enterLobby(lobby.id, player);
+            } catch (error) {
+                showMessage('Impossible de créer la partie. Vérifiez la configuration Firebase.');
+                console.error(error);
+            }
         });
 
-        joinForm.addEventListener('submit', function(e) {
+        joinForm.addEventListener('submit', async function(e) {
             e.preventDefault();
             const pseudo = pseudoInput.value.trim();
             const password = passwordInput.value.trim();
-            const lobby = getLobby();
 
             if (!pseudo || !password) {
                 showMessage('Veuillez entrer votre pseudo et le mot de passe de la partie.');
                 return;
             }
 
-            if (!lobby) {
-                showMessage('Aucune partie n’est actuellement disponible.');
-                return;
-            }
+            try {
+                await ensureSignedIn();
+                const lobbyQuery = query(
+                    collection(db, 'lobbies'),
+                    where('password', '==', password),
+                    limit(1)
+                );
+                const lobbySnapshot = await getDocs(lobbyQuery);
 
-            if (password !== lobby.password) {
-                showMessage('Le mot de passe de la partie est incorrect.');
-                return;
-            }
+                if (lobbySnapshot.empty) {
+                    showMessage('Aucune partie ne correspond à ce mot de passe.');
+                    return;
+                }
 
-            if (lobby.players.includes(pseudo)) {
-                showMessage('Ce pseudo est déjà utilisé dans le lobby.');
-                return;
-            }
+                const lobbyDocument = lobbySnapshot.docs[0];
+                const player = { id: playerId, pseudo: pseudo };
+                await runTransaction(db, async function(transaction) {
+                    const lobbyReference = doc(db, 'lobbies', lobbyDocument.id);
+                    const currentLobby = await transaction.get(lobbyReference);
+                    const lobbyData = currentLobby.data();
+                    const players = lobbyData.players || [];
 
-            lobby.players.push(pseudo);
-            saveLobby(lobby);
-            enterLobby(pseudo);
-        });
+                    if (players.some(function(existingPlayer) {
+                        return existingPlayer.pseudo.toLowerCase() === pseudo.toLowerCase();
+                    })) {
+                        throw new Error('PSEUDO_DEJA_UTILISE');
+                    }
 
-        document.getElementById('leave-lobby').addEventListener('click', function() {
-            const lobby = getLobby();
-
-            if (lobby) {
-                lobby.players = lobby.players.filter(function(player) {
-                    return player !== currentPlayer;
+                    transaction.update(lobbyReference, {
+                        players: players.concat(player)
+                    });
                 });
-
-                if (lobby.players.length === 0) {
-                    localStorage.removeItem(lobbyStorageKey);
+                enterLobby(lobbyDocument.id, player);
+            } catch (error) {
+                if (error.message === 'PSEUDO_DEJA_UTILISE') {
+                    showMessage('Ce pseudo est déjà utilisé dans le lobby.');
                 } else {
-                    saveLobby(lobby);
+                    showMessage('Impossible de rejoindre la partie. Vérifiez le mot de passe.');
+                    console.error(error);
                 }
             }
-
-            currentPlayer = '';
-            lobbyView.classList.add('hidden');
-            homeView.classList.remove('hidden');
-            showMessage('');
         });
 
-        window.addEventListener('storage', function(e) {
-            if (e.key === lobbyStorageKey && !lobbyView.classList.contains('hidden')) {
-                const lobby = getLobby();
-
-                if (lobby) {
-                    renderLobby(lobby);
-                }
+        document.getElementById('leave-lobby').addEventListener('click', async function() {
+            if (!currentLobbyId || !currentPlayer) {
+                leaveLobbyView();
+                return;
             }
+
+            try {
+                const lobbyReference = doc(db, 'lobbies', currentLobbyId);
+                const lobbySnapshot = await getDoc(lobbyReference);
+                const lobby = lobbySnapshot.exists() ? lobbySnapshot.data() : null;
+
+                if (lobby && lobby.hostId === currentPlayer.id) {
+                    await deleteDoc(lobbyReference);
+                } else {
+                    await updateDoc(lobbyReference, {
+                        players: arrayRemove(currentPlayer)
+                    });
+                }
+            } catch (error) {
+                console.error(error);
+            } finally {
+                leaveLobbyView();
+            }
+        });
+
+        ensureSignedIn().then(function() {
+            const savedLobbyId = sessionStorage.getItem('botc-lobby-id');
+            if (savedLobbyId) {
+                const lobbyReference = doc(db, 'lobbies', savedLobbyId);
+                getDoc(lobbyReference).then(function(snapshot) {
+                    const lobby = snapshot.data();
+                    const savedPlayer = lobby && (lobby.players || []).find(function(player) {
+                        return player.id === playerId;
+                    });
+
+                    if (savedPlayer) {
+                        enterLobby(savedLobbyId, savedPlayer);
+                    }
+                }).catch(function(error) {
+                    console.error(error);
+                });
+            }
+        }).catch(function(error) {
+            showMessage('Connexion à Firebase impossible.');
+            console.error(error);
         });
     </script>
 </body>
