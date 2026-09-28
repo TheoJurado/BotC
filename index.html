@@ -136,7 +136,6 @@
         import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js';
         import { getAuth, signInAnonymously } from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js';
         import {
-            addDoc,
             arrayRemove,
             collection,
             deleteDoc,
@@ -150,7 +149,8 @@
             runTransaction,
             serverTimestamp,
             updateDoc,
-            where
+            where,
+            writeBatch
         } from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js';
 
         const firebaseConfig = {
@@ -173,6 +173,7 @@
         const message = document.getElementById('message');
         const lobbyPassword = document.getElementById('lobby-password');
         const playersList = document.getElementById('players-list');
+        const gamesCollectionName = 'games';
         const playerId = sessionStorage.getItem('botc-player-id') || crypto.randomUUID();
         let currentPlayer = null;
         let currentLobbyId = '';
@@ -202,7 +203,7 @@
 
             currentLobbyId = lobbyId;
             sessionStorage.setItem('botc-lobby-id', lobbyId);
-            stopLobbyListener = onSnapshot(doc(db, 'lobbies', lobbyId), function(snapshot) {
+            stopLobbyListener = onSnapshot(doc(db, gamesCollectionName, lobbyId), function(snapshot) {
                 if (!snapshot.exists()) {
                     leaveLobbyView();
                     showMessage('Cette partie n’est plus disponible.');
@@ -242,6 +243,56 @@
             }
         }
 
+        function createPlayerData(pseudo) {
+            return {
+                pseudo: pseudo,
+                isAlive: true,
+                role: '',
+                secondaryRole: '',
+                lastVote: false,
+                createdAt: serverTimestamp()
+            };
+        }
+
+        function getPlayerReference(lobbyId) {
+            return doc(db, gamesCollectionName, lobbyId, 'players', playerId);
+        }
+
+        async function cleanOldGames() {
+            const expirationDate = new Date(Date.now() - 6 * 60 * 60 * 1000);
+            const oldGamesQuery = query(
+                collection(db, gamesCollectionName),
+                where('createdAt', '<', expirationDate)
+            );
+            const oldGamesSnapshot = await getDocs(oldGamesQuery);
+
+            for (const gameDocument of oldGamesSnapshot.docs) {
+                const playersSnapshot = await getDocs(
+                    collection(db, gamesCollectionName, gameDocument.id, 'players')
+                );
+
+                if (playersSnapshot.empty) {
+                    await deleteDoc(gameDocument.ref);
+                    continue;
+                }
+
+                for (let index = 0; index < playersSnapshot.docs.length; index += 450) {
+                    const batch = writeBatch(db);
+                    const playerDocuments = playersSnapshot.docs.slice(index, index + 450);
+
+                    playerDocuments.forEach(function(playerDocument) {
+                        batch.delete(playerDocument.ref);
+                    });
+
+                    if (index + 450 >= playersSnapshot.docs.length) {
+                        batch.delete(gameDocument.ref);
+                    }
+
+                    await batch.commit();
+                }
+            }
+        }
+
         document.getElementById('create-game').addEventListener('click', async function(e) {
             e.preventDefault();
             const pseudo = pseudoInput.value.trim();
@@ -260,14 +311,19 @@
 
             try {
                 await ensureSignedIn();
+                await cleanOldGames();
                 const player = { id: playerId, pseudo: pseudo };
-                const lobby = await addDoc(collection(db, 'lobbies'), {
-                    password: password,
-                    hostId: playerId,
-                    players: [player],
-                    createdAt: serverTimestamp()
+                const lobbyReference = doc(collection(db, gamesCollectionName));
+                await runTransaction(db, async function(transaction) {
+                    transaction.set(lobbyReference, {
+                        password: password,
+                        hostId: playerId,
+                        players: [player],
+                        createdAt: serverTimestamp()
+                    });
+                    transaction.set(getPlayerReference(lobbyReference.id), createPlayerData(pseudo));
                 });
-                enterLobby(lobby.id, player);
+                enterLobby(lobbyReference.id, player);
             } catch (error) {
                 showMessage('Impossible de créer la partie. Vérifiez la configuration Firebase.');
                 console.error(error);
@@ -287,7 +343,7 @@
             try {
                 await ensureSignedIn();
                 const lobbyQuery = query(
-                    collection(db, 'lobbies'),
+                    collection(db, gamesCollectionName),
                     where('password', '==', password),
                     limit(1)
                 );
@@ -301,7 +357,7 @@
                 const lobbyDocument = lobbySnapshot.docs[0];
                 const player = { id: playerId, pseudo: pseudo };
                 await runTransaction(db, async function(transaction) {
-                    const lobbyReference = doc(db, 'lobbies', lobbyDocument.id);
+                    const lobbyReference = doc(db, gamesCollectionName, lobbyDocument.id);
                     const currentLobby = await transaction.get(lobbyReference);
                     const lobbyData = currentLobby.data();
                     const players = lobbyData.players || [];
@@ -315,6 +371,7 @@
                     transaction.update(lobbyReference, {
                         players: players.concat(player)
                     });
+                    transaction.set(getPlayerReference(lobbyDocument.id), createPlayerData(pseudo));
                 });
                 enterLobby(lobbyDocument.id, player);
             } catch (error) {
@@ -334,9 +391,11 @@
             }
 
             try {
-                const lobbyReference = doc(db, 'lobbies', currentLobbyId);
+                const lobbyReference = doc(db, gamesCollectionName, currentLobbyId);
                 const lobbySnapshot = await getDoc(lobbyReference);
                 const lobby = lobbySnapshot.exists() ? lobbySnapshot.data() : null;
+
+                await deleteDoc(getPlayerReference(currentLobbyId));
 
                 if (lobby && lobby.hostId === currentPlayer.id) {
                     await deleteDoc(lobbyReference);
@@ -355,7 +414,7 @@
         ensureSignedIn().then(function() {
             const savedLobbyId = sessionStorage.getItem('botc-lobby-id');
             if (savedLobbyId) {
-                const lobbyReference = doc(db, 'lobbies', savedLobbyId);
+                const lobbyReference = doc(db, gamesCollectionName, savedLobbyId);
                 getDoc(lobbyReference).then(function(snapshot) {
                     const lobby = snapshot.data();
                     const savedPlayer = lobby && (lobby.players || []).find(function(player) {
