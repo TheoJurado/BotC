@@ -371,6 +371,11 @@
             width: 100%;
             margin-top: 0.75rem;
         }
+        .game-player-actions {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 0.75rem;
+        }
         .game-message {
             min-height: 1.2rem;
             margin: 0.4rem 0 0;
@@ -511,7 +516,10 @@
                 <p id="day-vote-count"></p>
             </div>
             <ul class="game-player-list" id="game-players-list"></ul>
-            <button class="game-vote-button" type="button" id="vote-day-end">Voter pour la fin de journée</button>
+            <div class="game-player-actions">
+                <button class="game-vote-button" type="button" id="vote-day-end">Voter pour la fin de journée</button>
+                <button class="game-vote-button hidden" type="button" id="start-day">Le jour se lève</button>
+            </div>
             <p class="game-message" id="game-message" role="status"></p>
         </section>
         <aside class="accusation-panel hidden" id="accusation-panel" aria-labelledby="accusation-title">
@@ -588,6 +596,7 @@
         const gameRolesList = document.getElementById('game-roles-list');
         const dayVoteCount = document.getElementById('day-vote-count');
         const voteDayEndButton = document.getElementById('vote-day-end');
+        const startDayButton = document.getElementById('start-day');
         const gameMessage = document.getElementById('game-message');
         const accusationPanel = document.getElementById('accusation-panel');
         const accusationDescription = document.getElementById('accusation-description');
@@ -1018,7 +1027,37 @@
                 : hasVoted
                     ? 'Retirer mon vote'
                     : 'Voter pour la fin de journée';
+            startDayButton.classList.toggle('hidden', phase !== 'night' || !currentPlayer || currentPlayer.id !== lobby.hostId);
             gameMessage.textContent = '';
+        }
+
+        async function startDay() {
+            if (!currentLobbyId || !currentPlayer) {
+                return;
+            }
+
+            try {
+                await runTransaction(db, async function(transaction) {
+                    const lobbyReference = doc(db, gamesCollectionName, currentLobbyId);
+                    const lobbySnapshot = await transaction.get(lobbyReference);
+                    const lobby = lobbySnapshot.data();
+
+                    if (!lobby || lobby.hostId !== currentPlayer.id || lobby.gameIsRunning !== true || lobby.gamePhase !== 'night') {
+                        return;
+                    }
+
+                    transaction.update(lobbyReference, {
+                        gamePhase: 'day',
+                        dayEndsAt: Date.now() + dayDurationMs,
+                        dayEndVotes: [],
+                        accusedPlayerIds: [],
+                        lastDayResult: null
+                    });
+                });
+            } catch (error) {
+                gameMessage.textContent = 'Impossible de relancer la journée.';
+                console.error(error);
+            }
         }
 
         async function startAccusation(targetPlayerId) {
@@ -1847,6 +1886,7 @@
         });
 
         voteDayEndButton.addEventListener('click', castDayEndVote);
+        startDayButton.addEventListener('click', startDay);
         accusationVoteSwitch.addEventListener('click', castAccusationVote);
 
         document.getElementById('leave-lobby').addEventListener('click', async function() {
