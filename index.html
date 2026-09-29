@@ -1032,15 +1032,15 @@
             }
 
             if ((selectedRoles.includes('Lavandiere') || selectedRoles.includes('Vierge')) && townsfolkCount < 2) {///Ces deux roles sont des Villageois qui ont besoin de la présence d'au moins un autre Villageois pour être jouable.
-                validationErrors.push('Lavandiere ou Vierge sélectionnée : il faut indiquer au moins 2 Villageois.');
+                validationErrors.push('Lavandiere ou Vierge sélectionnée : il faut au moins 2 Villageois.');
             }
 
             if (selectedRoles.includes('Libraire') && outsiderCount < 1) {//Le Libraire est un Villageois qui a besoin de la présence d'au moins un Paria pour être jouable.
-                validationErrors.push('Libraire sélectionné : il faut indiquer au moins 1 Paria.');
+                validationErrors.push('Libraire sélectionné : il faut au moins 1 Paria.');
             }
 
             if ((selectedRoles.includes('Enqueteur') || selectedRoles.includes('Chef')) && minionCount < 1) {//Ces deux roles sont des Villageois qui ont besoin de la présence d'au moins un Sbire pour être jouable.
-                validationErrors.push('Enqueteur ou Chef sélectionné : il faut indiquer au moins 1 Sbire.');
+                validationErrors.push('Enqueteur ou Chef sélectionné : il faut au moins 1 Sbire.');
             }
 
             if((townsfolkCount + outsiderCount) <= (minionCount + 1)) {//S'il y a trop de Sbires par rapport au nombre de Villageois et Paria, la partie est impossible a gagner pour le village.
@@ -1276,12 +1276,14 @@
                         return;
                     }
 
+                    /* MODE TEST TEMPORAIRE : réactiver ces validations avant les vraies parties.
                     const validationErrors = validateGameConfiguration(lobby);
                     if (validationErrors.length > 0) {
                         const validationError = new Error('CONFIGURATION_INVALIDE');
                         validationError.validationErrors = validationErrors;
                         throw validationError;
                     }
+                    */
 
                     transaction.update(lobbyReference, {
                         gameIsRunning: true,
