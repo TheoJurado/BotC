@@ -5,6 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Blood Clocktower en Ligne</title>
     <style>
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+        }
+
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background-color: #1a1a2e;
@@ -23,6 +29,96 @@
             width: 100%;
             max-width: 400px;
             text-align: center;
+        }
+        .lobby-layout {
+            display: flex;
+            align-items: flex-start;
+            justify-content: center;
+            gap: 1.5rem;
+            width: min(900px, 100%);
+        }
+        .lobby-container {
+            flex: 1 1 400px;
+        }
+        .roles-panel {
+            flex: 0 1 330px;
+            max-height: calc(100vh - 4rem);
+            overflow-y: auto;
+            text-align: left;
+        }
+        .roles-panel::-webkit-scrollbar {
+            width: 8px;
+        }
+        .roles-panel::-webkit-scrollbar-thumb {
+            background-color: #533483;
+            border-radius: 4px;
+        }
+        .roles-panel h2 {
+            margin-top: 0;
+            color: #e94560;
+            text-align: center;
+        }
+        .role-counts {
+            margin-bottom: 1rem;
+            padding: 0.75rem;
+            background-color: rgba(15, 52, 96, 0.65);
+        }
+        .role-count {
+            display: grid;
+            grid-template-columns: 1fr 4.5rem;
+            align-items: center;
+            gap: 0.75rem;
+            margin: 0.45rem 0;
+            color: white;
+            font-size: 0.9rem;
+        }
+        .role-count input {
+            width: 4.5rem;
+            padding: 0.45rem;
+            text-align: center;
+        }
+        .role-category {
+            margin-top: 1.25rem;
+        }
+        .role-category h3 {
+            margin: 0 0 0.5rem;
+            color: #86b8e8;
+            font-size: 1rem;
+        }
+        .role-category.minion h3,
+        .role-category.demon h3 {
+            color: #e94560;
+        }
+        .role-option {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            padding: 0.35rem 0;
+            color: white;
+            font-size: 0.9rem;
+        }
+        .role-option input {
+            width: auto;
+            accent-color: #e94560;
+        }
+        .role-option input:not(:disabled) {
+            cursor: pointer;
+        }
+        @media (max-width: 720px) {
+            body {
+                align-items: flex-start;
+                height: auto;
+                min-height: 100vh;
+                padding: 1rem 0;
+            }
+            .lobby-layout {
+                flex-direction: column;
+                align-items: stretch;
+                width: 100%;
+            }
+            .roles-panel {
+                max-height: 420px;
+            }
         }
         .hidden {
             display: none;
@@ -123,14 +219,22 @@
         </div>
     </div>
 
-    <div class="container hidden" id="lobby-view">
-        <h1>Lobby</h1>
-        <p>Mot de passe de la partie :</p>
-        <div class="lobby-password" id="lobby-password"></div>
-        <h2>Joueurs connectés</h2>
-        <ul class="players" id="players-list"></ul>
-        <button type="button" id="start-game">Lancer la partie</button>
-        <button type="button" id="leave-lobby">Quitter le lobby</button>
+    <div class="lobby-layout hidden" id="lobby-view">
+        <div class="container lobby-container">
+            <h1>Lobby</h1>
+            <p>Mot de passe de la partie :</p>
+            <div class="lobby-password" id="lobby-password"></div>
+            <h2>Joueurs connectés</h2>
+            <ul class="players" id="players-list"></ul>
+            <button type="button" id="start-game">Lancer la partie</button>
+            <button type="button" id="leave-lobby">Quitter le lobby</button>
+            <p class="message" id="lobby-message" role="status"></p>
+        </div>
+        <aside class="container roles-panel" aria-labelledby="roles-title">
+            <h2 id="roles-title">Configuration des rôles</h2>
+            <div class="role-counts" id="role-counts"></div>
+            <div id="roles-list"></div>
+        </aside>
     </div>
 
     <script type="module">
@@ -172,10 +276,36 @@
         const pseudoInput = document.getElementById('pseudo');
         const passwordInput = document.getElementById('game-password');
         const message = document.getElementById('message');
+        const lobbyMessage = document.getElementById('lobby-message');
         const lobbyPassword = document.getElementById('lobby-password');
         const playersList = document.getElementById('players-list');
         const startGameButton = document.getElementById('start-game');
+        const roleCounts = document.getElementById('role-counts');
+        const rolesList = document.getElementById('roles-list');
         const gamesCollectionName = 'games';
+        const roleCountDefaults = {
+            townsfolk: 3,
+            outsider: 2,
+            minion: 2
+        };
+        const roleCatalog = {
+            townsfolk: {
+                label: 'Villageois (Townsfolk)',
+                roles: ['Lavandiere', 'Libraire', 'Enqueteur', 'Chef', 'Empatique', 'Voyante', 'Croque-mort', 'Moine', 'Gardien', 'Mercenaire', 'Vierge', 'Soldat', 'Maire']
+            },
+            outsider: {
+                label: 'Paria (Outsider)',
+                roles: ['Majordome', 'Ivrogne', 'Recluse', 'Saint']
+            },
+            minion: {
+                label: 'Sbire (Minion)',
+                roles: ['Empoisonneur', 'Espion', 'Femme fatale', 'Baron']
+            },
+            demon: {
+                label: 'Démon (Demon)',
+                roles: ['Diable']
+            }
+        };
         const playerId = sessionStorage.getItem('botc-player-id') || crypto.randomUUID();
         let currentPlayer = null;
         let currentLobbyId = '';
@@ -185,18 +315,232 @@
 
         function showMessage(text) {
             message.textContent = text;
+            lobbyMessage.textContent = text;
+        }
+
+        function getAllRoleNames() {
+            return Object.values(roleCatalog).flatMap(function(category) {
+                return category.roles;
+            });
+        }
+
+        function renderRoleCounts(lobby) {
+            const counts = lobby.roleCounts || roleCountDefaults;
+            const canEditCounts = Boolean(currentPlayer && currentPlayer.id === lobby.hostId && !lobby.gameIsRunning);
+            roleCounts.innerHTML = '';
+
+            Object.entries(roleCountDefaults).forEach(function(entry) {
+                const categoryKey = entry[0];
+                const categoryLabel = roleCatalog[categoryKey].label.split(' (')[0];
+                const countLabel = document.createElement('label');
+                const countInput = document.createElement('input');
+
+                countLabel.className = 'role-count';
+                countLabel.textContent = categoryLabel;
+                countInput.type = 'number';
+                countInput.min = '0';
+                countInput.max = '20';
+                countInput.step = '1';
+                countInput.inputMode = 'numeric';
+                countInput.value = Number.isInteger(counts[categoryKey]) ? counts[categoryKey] : roleCountDefaults[categoryKey];
+                countInput.disabled = !canEditCounts;
+                countInput.addEventListener('change', function() {
+                    updateRoleCount(categoryKey, countInput.value);
+                });
+                countLabel.appendChild(countInput);
+                roleCounts.appendChild(countLabel);
+            });
+        }
+
+        function renderRolePanel(lobby) {
+            const selectedRoles = lobby.selectedRoles || getAllRoleNames();
+            const canEditRoles = Boolean(currentPlayer && currentPlayer.id === lobby.hostId && !lobby.gameIsRunning);
+            rolesList.innerHTML = '';
+
+            Object.entries(roleCatalog).forEach(function(entry) {
+                const categoryKey = entry[0];
+                const category = entry[1];
+                const categoryElement = document.createElement('section');
+                categoryElement.className = 'role-category ' + categoryKey;
+
+                const categoryTitle = document.createElement('h3');
+                categoryTitle.textContent = category.label;
+                categoryElement.appendChild(categoryTitle);
+
+                category.roles.forEach(function(roleName) {
+                    const roleLabel = document.createElement('label');
+                    const roleCheckbox = document.createElement('input');
+                    const roleText = document.createElement('span');
+
+                    roleLabel.className = 'role-option';
+                    roleCheckbox.type = 'checkbox';
+                    roleCheckbox.checked = selectedRoles.includes(roleName);
+                    roleCheckbox.disabled = !canEditRoles;
+                    roleText.textContent = roleName;
+                    roleCheckbox.addEventListener('change', function() {
+                        updateSelectedRole(roleName, roleCheckbox.checked);
+                    });
+                    roleLabel.appendChild(roleCheckbox);
+                    roleLabel.appendChild(roleText);
+                    categoryElement.appendChild(roleLabel);
+                });
+
+                rolesList.appendChild(categoryElement);
+            });
         }
 
         function renderLobby(lobby) {
             lobbyPassword.textContent = lobby.password;
             playersList.innerHTML = '';
             startGameButton.classList.toggle('hidden', Boolean(lobby.gameIsRunning) || !currentPlayer || currentPlayer.id !== lobby.hostId);
+            renderRoleCounts(lobby);
+            renderRolePanel(lobby);
 
             (lobby.players || []).forEach(function(player) {
                 const playerItem = document.createElement('li');
                 playerItem.textContent = player.pseudo;
                 playersList.appendChild(playerItem);
             });
+        }
+
+        async function updateSelectedRole(roleName, isSelected) {
+            if (!currentLobbyId || !currentPlayer) {
+                return;
+            }
+
+            try {
+                await runTransaction(db, async function(transaction) {
+                    const lobbyReference = doc(db, gamesCollectionName, currentLobbyId);
+                    const lobbySnapshot = await transaction.get(lobbyReference);
+                    const lobby = lobbySnapshot.data();
+
+                    if (!lobby || lobby.hostId !== currentPlayer.id || lobby.gameIsRunning) {
+                        throw new Error('CONFIGURATION_INTERDITE');
+                    }
+
+                    const selectedRoles = Array.isArray(lobby.selectedRoles) ? lobby.selectedRoles : getAllRoleNames();
+                    const updatedRoles = isSelected
+                        ? Array.from(new Set(selectedRoles.concat(roleName)))
+                        : selectedRoles.filter(function(selectedRole) {
+                            return selectedRole !== roleName;
+                        });
+
+                    transaction.update(lobbyReference, {
+                        selectedRoles: updatedRoles
+                    });
+                });
+            } catch (error) {
+                showMessage('Seul l’hôte peut modifier les rôles avant le lancement.');
+                try {
+                    const lobbySnapshot = await getDoc(doc(db, gamesCollectionName, currentLobbyId));
+                    if (lobbySnapshot.exists()) {
+                        renderRolePanel(lobbySnapshot.data());
+                    }
+                } catch (refreshError) {
+                    console.error(refreshError);
+                }
+                console.error(error);
+            }
+        }
+
+        async function updateRoleCount(categoryKey, value) {
+            const count = Number(value);
+
+            if (!Number.isInteger(count) || count < 0 || count > 20) {
+                const lobbySnapshot = await getDoc(doc(db, gamesCollectionName, currentLobbyId));
+                if (lobbySnapshot.exists()) {
+                    renderRoleCounts(lobbySnapshot.data());
+                }
+                return;
+            }
+
+            try {
+                await runTransaction(db, async function(transaction) {
+                    const lobbyReference = doc(db, gamesCollectionName, currentLobbyId);
+                    const lobbySnapshot = await transaction.get(lobbyReference);
+                    const lobby = lobbySnapshot.data();
+
+                    if (!lobby || lobby.hostId !== currentPlayer.id || lobby.gameIsRunning) {
+                        throw new Error('CONFIGURATION_INTERDITE');
+                    }
+
+                    transaction.update(lobbyReference, {
+                        ['roleCounts.' + categoryKey]: count
+                    });
+                });
+            } catch (error) {
+                showMessage('Seul l’hôte peut modifier le nombre de rôles avant le lancement.');
+                console.error(error);
+                const lobbySnapshot = await getDoc(doc(db, gamesCollectionName, currentLobbyId));
+                if (lobbySnapshot.exists()) {
+                    renderRoleCounts(lobbySnapshot.data());
+                }
+            }
+        }
+
+        function validateGameConfiguration(lobby) {
+            const selectedRoles = Array.isArray(lobby.selectedRoles) ? lobby.selectedRoles : [];
+            const roleCounts = lobby.roleCounts || roleCountDefaults;
+            const playersCount = (lobby.players || []).length;
+            const townsfolkCount = Number(roleCounts.townsfolk) || 0;
+            const outsiderCount = Number(roleCounts.outsider) || 0;
+            const minionCount = Number(roleCounts.minion) || 0;
+            const expectedPlayersCount = townsfolkCount + outsiderCount + minionCount + 1;
+            const validationErrors = [];
+            const selectedTownsfolkCount = roleCatalog.townsfolk.roles.filter(function(roleName) {
+                return selectedRoles.includes(roleName);
+            }).length;
+            const selectedOutsiderCount = roleCatalog.outsider.roles.filter(function(roleName) {
+                return selectedRoles.includes(roleName);
+            }).length;
+
+            if (playersCount !== expectedPlayersCount) {
+                validationErrors.push('Joueurs connectés : ' + playersCount + ', alors que ' + expectedPlayersCount + ' sont requis.');
+            }
+
+            if (!selectedRoles.includes('Diable')) {
+                validationErrors.push('Le rôle Diable doit être coché.');
+            }
+
+            const categoryRules = [
+                ['townsfolk', 'Villageois'],
+                ['outsider', 'Paria'],
+                ['minion', 'Sbire']
+            ];
+            categoryRules.forEach(function(rule) {
+                const categoryKey = rule[0];
+                const categoryLabel = rule[1];
+                const selectedCount = roleCatalog[categoryKey].roles.filter(function(roleName) {
+                    return selectedRoles.includes(roleName);
+                }).length;
+                const requiredCount = Number(roleCounts[categoryKey]) || 0;
+
+                if (selectedCount < requiredCount) {
+                    validationErrors.push(categoryLabel + ' : ' + selectedCount + ' rôle(s) coché(s) pour ' + requiredCount + ' requis.');
+                }
+            });
+
+            if (selectedRoles.includes('Baron') && selectedOutsiderCount < outsiderCount + 2) {
+                validationErrors.push('Baron sélectionné : il faut au moins ' + (outsiderCount + 2) + ' Paria coché(s).');
+            }
+
+            if (selectedRoles.includes('Ivrogne') && selectedTownsfolkCount < townsfolkCount + 1) {
+                validationErrors.push('Ivrogne sélectionné : il faut au moins ' + (townsfolkCount + 1) + ' Villageois coché(s).');
+            }
+
+            if (selectedRoles.includes('Lavandiere') && townsfolkCount < 2) {
+                validationErrors.push('Lavandiere sélectionnée : il faut indiquer au moins 2 Villageois.');
+            }
+
+            if (selectedRoles.includes('Libraire') && outsiderCount < 1) {
+                validationErrors.push('Libraire sélectionné : il faut indiquer au moins 1 Paria.');
+            }
+
+            if ((selectedRoles.includes('Enqueteur') || selectedRoles.includes('Chef')) && minionCount < 1) {
+                validationErrors.push('Enqueteur ou Chef sélectionné : il faut indiquer au moins 1 Sbire.');
+            }
+
+            return validationErrors;
         }
 
         function subscribeToLobby(lobbyId) {
@@ -323,7 +667,9 @@
                         hostId: playerId,
                         players: [player],
                         createdAt: serverTimestamp(),
-                        gameIsRunning: false
+                        gameIsRunning: false,
+                        roleCounts: roleCountDefaults,
+                        selectedRoles: getAllRoleNames()
                     });
                     transaction.set(getPlayerReference(lobbyReference.id), createPlayerData(pseudo));
                 });
@@ -413,12 +759,23 @@
                         return;
                     }
 
+                    const validationErrors = validateGameConfiguration(lobby);
+                    if (validationErrors.length > 0) {
+                        const validationError = new Error('CONFIGURATION_INVALIDE');
+                        validationError.validationErrors = validationErrors;
+                        throw validationError;
+                    }
+
                     transaction.update(lobbyReference, {
                         gameIsRunning: true
                     });
                 });
             } catch (error) {
-                showMessage('Seul l’hôte peut lancer la partie.');
+                if (error.message === 'CONFIGURATION_INVALIDE') {
+                    showMessage('Partie impossible à lancer : ' + error.validationErrors.join(' '));
+                } else {
+                    showMessage('Seul l’hôte peut lancer la partie.');
+                }
                 console.error(error);
             }
         });
