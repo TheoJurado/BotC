@@ -1163,7 +1163,7 @@
             const seconds = (remainingSeconds % 60).toString().padStart(2, '0');
 
             accusationCountdown.textContent = minutes + ':' + seconds;
-            if (remainingMs === 0 && canResolve) {
+            if (remainingMs === 0) {// && canResolve
                 resolveAccusation(accusation.id);
             }
         }
