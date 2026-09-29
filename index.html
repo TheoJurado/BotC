@@ -904,13 +904,15 @@
             let eliminatedPlayer = null;
 
             if (outcome.player) {
-                const playerReference = doc(db, gamesCollectionName, currentLobbyId, 'players', outcome.player.id);
                 eliminatedPlayer = outcome.player;
-                transaction.update(playerReference, {
-                    isAlive: false,
-                    lastVote: true
-                });
             }
+
+            players.forEach(function(player) {
+                const playerReference = doc(db, gamesCollectionName, currentLobbyId, 'players', player.id);
+                transaction.update(playerReference, player.id === (eliminatedPlayer && eliminatedPlayer.id)
+                    ? { canAccuse: true, isAlive: false, lastVote: true }
+                    : { canAccuse: true });
+            });
 
             transaction.update(lobbyReference, {
                 gamePhase: 'night',
@@ -920,13 +922,11 @@
                 eliminatedPlayerIds: eliminatedPlayer
                     ? Array.from(new Set(eliminatedPlayerIds.concat(eliminatedPlayer.id)))
                     : eliminatedPlayerIds,
-                players: eliminatedPlayer
-                    ? players.map(function(player) {
-                        return player.id === eliminatedPlayer.id
-                            ? Object.assign({}, player, { isAlive: false, lastVote: true })
-                            : player;
-                    })
-                    : players,
+                players: players.map(function(player) {
+                    return player.id === (eliminatedPlayer && eliminatedPlayer.id)
+                        ? Object.assign({}, player, { canAccuse: true, isAlive: false, lastVote: true })
+                        : Object.assign({}, player, { canAccuse: true });
+                }),
                 lastDayResult: {
                     id: crypto.randomUUID(),
                     eliminatedPlayerId: eliminatedPlayer ? eliminatedPlayer.id : null,
@@ -955,7 +955,11 @@
                 return currentPlayer && player.id === currentPlayer.id;
             });
             const isEliminated = currentPlayerData && !isPlayerAlive(currentPlayerData, eliminatedPlayerIds);
-            const canAccuse = Boolean(currentPlayerData && isPlayerAlive(currentPlayerData, eliminatedPlayerIds));
+            const currentPlayerCanAccuse = Boolean(currentPlayerData && currentPlayerData.canAccuse !== false);
+            const currentPlayerAlive = Boolean(currentPlayerData
+                && currentPlayerData.isAlive !== false
+                && !eliminatedPlayerIds.includes(currentPlayerData.id));
+            const canAccuse = currentPlayerCanAccuse && currentPlayerAlive;
             const accusationInProgress = Boolean(lobby.activeAccusation);
             const accusationTotals = lobby.accusationTotals && typeof lobby.accusationTotals === 'object'
                 ? lobby.accusationTotals
@@ -1037,6 +1041,10 @@
                         throw new Error('ACCUSATEUR_ELIMINE');
                     }
 
+                    if (accuser.canAccuse === false) {
+                        throw new Error('ACCUSATION_DEJA_UTILISEE');
+                    }
+
                     if (!target || targetPlayerId === currentPlayer.id || !isPlayerAlive(target, eliminatedPlayerIds)) {
                         throw new Error('CIBLE_INVALIDE');
                     }
@@ -1048,6 +1056,11 @@
                     const accusationStartedAt = Date.now();
                     transaction.update(lobbyReference, {
                         pausedDayTimeMs: deadline - accusationStartedAt,
+                        players: players.map(function(player) {
+                            return player.id === currentPlayer.id
+                                ? Object.assign({}, player, { canAccuse: false })
+                                : player;
+                        }),
                         activeAccusation: {
                             id: crypto.randomUUID(),
                             accuserId: currentPlayer.id,
@@ -1056,6 +1069,9 @@
                             endsAt: accusationStartedAt + accusationDurationMs,
                             votes: {}
                         }
+                    });
+                    transaction.update(doc(db, gamesCollectionName, currentLobbyId, 'players', currentPlayer.id), {
+                        canAccuse: false
                     });
                 });
             } catch (error) {
@@ -1621,6 +1637,7 @@
                 role: '',
                 secondaryRole: '',
                 lastVote: false,
+                canAccuse: true,
                 createdAt: serverTimestamp()
             };
         }
