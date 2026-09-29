@@ -205,9 +205,9 @@
             grid-template-columns: minmax(220px, 1fr) minmax(360px, 1.6fr) minmax(220px, 1fr);
             grid-template-rows: auto minmax(0, 1fr) minmax(180px, 28vh);
             grid-template-areas:
-                ". timer roles"
-                ". players roles"
-                ". system roles";
+                "accusation timer roles"
+                "accusation players roles"
+                "accusation system roles";
             gap: 1rem;
         }
         .game-layout.hidden {
@@ -231,10 +231,76 @@
         }
         .game-players,
         .game-roles,
-        .system-chat {
+        .system-chat,
+        .accusation-panel {
             min-width: 0;
             background-color: #16213e;
             border-radius: 8px;
+        }
+        .accusation-panel {
+            grid-area: accusation;
+            align-self: start;
+            padding: 1rem;
+        }
+        .accusation-panel h2 {
+            margin: 0 0 0.65rem;
+            color: #e94560;
+            font-size: 1rem;
+        }
+        .accusation-description,
+        .accusation-vote-count {
+            margin: 0.55rem 0;
+            color: white;
+        }
+        .accusation-countdown {
+            display: block;
+            color: #f5c542;
+            font-size: 1.6rem;
+            font-variant-numeric: tabular-nums;
+            text-align: center;
+        }
+        .vote-switch {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.6rem;
+            width: auto;
+            margin: 0.5rem 0 0;
+            padding: 0.35rem 0;
+            background: transparent;
+            color: white;
+        }
+        .vote-switch-track {
+            width: 2.75rem;
+            height: 1.5rem;
+            display: inline-flex;
+            align-items: center;
+            padding: 0.15rem;
+            border-radius: 999px;
+            background: #49546b;
+            transition: background-color 0.2s;
+        }
+        .vote-switch-thumb {
+            width: 1.2rem;
+            height: 1.2rem;
+            border-radius: 50%;
+            background: white;
+            transition: transform 0.2s;
+        }
+        .vote-switch[aria-checked="true"] .vote-switch-track {
+            background: #268b68;
+        }
+        .vote-switch[aria-checked="true"] .vote-switch-thumb {
+            transform: translateX(1.25rem);
+        }
+        .vote-switch:disabled {
+            color: #9ba6bb;
+            cursor: not-allowed;
+        }
+        .accusation-status {
+            min-height: 1.1rem;
+            margin: 0.4rem 0 0;
+            color: #f5c542;
+            font-size: 0.8rem;
         }
         .game-players {
             grid-area: players;
@@ -271,12 +337,23 @@
         }
         .game-player-row {
             display: grid;
-            grid-template-columns: 1.5rem minmax(0, 1fr) auto;
+            grid-template-columns: auto minmax(0, 1fr) 1.5rem auto;
             align-items: center;
             gap: 0.6rem;
             min-height: 2.6rem;
             padding: 0.35rem 0;
             border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+        }
+        .accusation-button {
+            width: auto;
+            min-width: 5.5rem;
+            margin: 0;
+            padding: 0.45rem 0.55rem;
+            font-size: 0.75rem;
+        }
+        .accusation-button:disabled {
+            background-color: #49546b;
+            cursor: not-allowed;
         }
         .player-skull {
             color: #e94560;
@@ -373,6 +450,7 @@
                     "timer"
                     "players"
                     "system"
+                    "accusation"
                     "roles";
             }
             .game-roles {
@@ -433,12 +511,23 @@
             <button class="game-vote-button" type="button" id="vote-day-end">Voter pour la fin de journée</button>
             <p class="game-message" id="game-message" role="status"></p>
         </section>
+        <aside class="accusation-panel hidden" id="accusation-panel" aria-labelledby="accusation-title">
+            <h2 id="accusation-title">Vote d’accusation</h2>
+            <p class="accusation-description" id="accusation-description"></p>
+            <output class="accusation-countdown" id="accusation-countdown" aria-live="polite">02:00</output>
+            <p class="accusation-vote-count" id="accusation-vote-count"></p>
+            <button class="vote-switch" id="accusation-vote-switch" type="button" role="switch" aria-checked="false">
+                <span class="vote-switch-track" aria-hidden="true"><span class="vote-switch-thumb"></span></span>
+                <span id="accusation-vote-label">Mon vote : OFF</span>
+            </button>
+            <p class="accusation-status" id="accusation-status" role="status"></p>
+        </aside>
         <aside class="game-roles" aria-labelledby="game-roles-title">
             <h2 id="game-roles-title">Rôles possibles</h2>
             <div id="game-roles-list"></div>
         </aside>
         <section class="system-chat" aria-labelledby="system-chat-title">
-            <h2 id="system-chat-title">Journal du système</h2>
+            <h2 id="system-chat-title">Journal personnel</h2>
             <ol class="system-feed" id="system-feed" aria-live="polite"></ol>
         </section>
     </main>
@@ -497,9 +586,17 @@
         const dayVoteCount = document.getElementById('day-vote-count');
         const voteDayEndButton = document.getElementById('vote-day-end');
         const gameMessage = document.getElementById('game-message');
+        const accusationPanel = document.getElementById('accusation-panel');
+        const accusationDescription = document.getElementById('accusation-description');
+        const accusationCountdown = document.getElementById('accusation-countdown');
+        const accusationVoteCount = document.getElementById('accusation-vote-count');
+        const accusationVoteSwitch = document.getElementById('accusation-vote-switch');
+        const accusationVoteLabel = document.getElementById('accusation-vote-label');
+        const accusationStatus = document.getElementById('accusation-status');
         const systemFeed = document.getElementById('system-feed');
         const gamesCollectionName = 'games';
         const dayDurationMs = 15 * 60 * 1000;//15 minutes
+        const accusationDurationMs = 2 * 60 * 1000;
         const roleCountDefaults = {
             townsfolk: 3,
             outsider: 2,
@@ -531,6 +628,9 @@
         let countdownInterval = null;
         let currentDayDeadline = null;
         let dayTransitionInProgress = false;
+        let accusationInterval = null;
+        let currentAccusationId = null;
+        let accusationResolutionInProgress = false;
 
         sessionStorage.setItem('botc-player-id', playerId);
 
@@ -637,20 +737,105 @@
         function renderGame(lobby) {
             const selectedRoles = Array.isArray(lobby.selectedRoles) ? lobby.selectedRoles : [];
             const phase = lobby.gamePhase || 'day';
+            const activeAccusation = lobby.activeAccusation || null;
 
             gamePhaseLabel.textContent = phase === 'night' ? 'La nuit est tombée' : 'Jour en cours';
             renderGameRoles(selectedRoles);
             renderGamePlayers(lobby, phase);
+            renderAccusation(lobby, activeAccusation);
 
-            if (phase === 'day') {
+            if (phase === 'night' && lobby.lastDayResult) {
+                const result = lobby.lastDayResult;
+                const eliminatedPlayer = (lobby.players || []).find(function(player) {
+                    return player.id === result.eliminatedPlayerId;
+                });
+                gameMessage.textContent = result.tied
+                    ? 'Égalité avec ' + result.votes + ' votes : personne n’est éliminé.'
+                    : eliminatedPlayer
+                        ? eliminatedPlayer.pseudo + ' est éliminé avec ' + result.votes + ' votes.'
+                        : 'Personne n’est éliminé aujourd’hui.';
+            }
+
+            if (phase === 'day' && activeAccusation) {
+                stopDayTimer();
+                updateTimerDisplay(Number(lobby.pausedDayTimeMs));
+                startAccusationTimer(activeAccusation, lobby.hostId);
+                voteDayEndButton.disabled = true;
+            } else if (phase === 'day') {
+                stopAccusationTimer();
                 const deadline = lobby.dayEndsAt && typeof lobby.dayEndsAt.toMillis === 'function'
                     ? lobby.dayEndsAt.toMillis()
                     : Number(lobby.dayEndsAt);
                 startDayTimer(deadline);
             } else {
                 stopDayTimer();
+                stopAccusationTimer();
                 gameTimerValue.textContent = 'Nuit';
             }
+
+            if (phase === 'day' && !activeAccusation && currentPlayer && currentPlayer.id === lobby.hostId) {
+                const players = Array.isArray(lobby.players) ? lobby.players : [];
+                const eliminatedPlayerIds = Array.isArray(lobby.eliminatedPlayerIds) ? lobby.eliminatedPlayerIds : [];
+                const livingPlayers = players.filter(function(player) { return isPlayerAlive(player, eliminatedPlayerIds); });
+                const livingPlayerIds = livingPlayers.map(function(player) { return player.id; });
+                const dayEndVotes = Array.isArray(lobby.dayEndVotes) ? lobby.dayEndVotes : [];
+                const validDayEndVotes = dayEndVotes.filter(function(voterId) { return livingPlayerIds.includes(voterId); });
+
+                if (validDayEndVotes.length >= Math.floor(livingPlayers.length / 2) + 1) {
+                    advanceToNight();
+                }
+            }
+        }
+
+        function renderAccusation(lobby, accusation) {
+            if (!accusation) {
+                accusationPanel.classList.add('hidden');
+                accusationDescription.textContent = '';
+                accusationVoteCount.textContent = '';
+                accusationVoteSwitch.disabled = true;
+                accusationStatus.textContent = '';
+                return;
+            }
+
+            accusationPanel.classList.remove('hidden');
+            const players = Array.isArray(lobby.players) ? lobby.players : [];
+            const accuser = players.find(function(player) { return player.id === accusation.accuserId; });
+            const target = players.find(function(player) { return player.id === accusation.targetId; });
+            const alivePlayers = players.filter(function(player) {
+                return isPlayerAlive(player, Array.isArray(lobby.eliminatedPlayerIds) ? lobby.eliminatedPlayerIds : []);
+            });
+            const votes = accusation.votes && typeof accusation.votes === 'object' ? accusation.votes : {};
+            const yesVotes = players.filter(function(player) { return votes[player.id] === true; }).length;
+            const majority = Math.floor(alivePlayers.length / 2) + 1;
+            const currentPlayerData = players.find(function(player) {
+                return currentPlayer && player.id === currentPlayer.id;
+            });
+            const hasVoted = Boolean(currentPlayer && votes[currentPlayer.id] === true);
+            const currentPlayerAlive = Boolean(currentPlayerData && isPlayerAlive(currentPlayerData, Array.isArray(lobby.eliminatedPlayerIds) ? lobby.eliminatedPlayerIds : []));
+            const hasFinalVote = Boolean(currentPlayerData && currentPlayerData.lastVote === true);
+            const canVote = Boolean(currentPlayerData && (currentPlayerAlive || (hasFinalVote && !hasVoted)));
+
+            accusationDescription.textContent = (accuser ? accuser.pseudo : 'Un joueur') + ' accuse ' + (target ? target.pseudo : 'un joueur');
+            accusationVoteCount.textContent = yesVotes + ' voix pour; majorité : ' + majority + ' joueurs vivants';
+            accusationVoteSwitch.setAttribute('aria-checked', String(hasVoted));
+            accusationVoteSwitch.disabled = !canVote;
+            accusationVoteLabel.textContent = currentPlayerAlive
+                ? 'Mon vote : ' + (hasVoted ? 'ON' : 'OFF')
+                : hasFinalVote
+                    ? 'Vote ultime : ' + (hasVoted ? 'ON' : 'OFF')
+                    : 'Vote ultime utilisé';
+            accusationStatus.textContent = canVote
+                ? ''
+                : currentPlayerAlive
+                    ? 'Vote indisponible.'
+                    : 'Ce joueur a déjà utilisé son vote ultime.';
+        }
+
+        function updateTimerDisplay(remainingMs) {
+            const remainingSeconds = Math.ceil(Math.max(0, remainingMs) / 1000);
+            const minutes = Math.floor(remainingSeconds / 60).toString().padStart(2, '0');
+            const seconds = (remainingSeconds % 60).toString().padStart(2, '0');
+            gameTimerValue.textContent = minutes + ':' + seconds;
         }
 
         function renderGameRoles(selectedRoles) {
@@ -685,12 +870,78 @@
             });
         }
 
+        function isPlayerAlive(player, eliminatedPlayerIds) {
+            return player.isAlive !== false && !eliminatedPlayerIds.includes(player.id);
+        }
+
+        function getDayEliminationOutcome(lobby) {
+            const players = Array.isArray(lobby.players) ? lobby.players : [];
+            const eliminatedPlayerIds = Array.isArray(lobby.eliminatedPlayerIds) ? lobby.eliminatedPlayerIds : [];
+            const totals = lobby.accusationTotals && typeof lobby.accusationTotals === 'object'
+                ? lobby.accusationTotals
+                : {};
+            const livingPlayers = players.filter(function(player) {
+                return isPlayerAlive(player, eliminatedPlayerIds);
+            });
+            const highestVoteCount = livingPlayers.reduce(function(highest, player) {
+                return Math.max(highest, Number(totals[player.id]) || 0);
+            }, 0);
+            const leaders = highestVoteCount > 0
+                ? livingPlayers.filter(function(player) { return (Number(totals[player.id]) || 0) === highestVoteCount; })
+                : [];
+
+            return {
+                player: leaders.length === 1 ? leaders[0] : null,
+                tied: leaders.length > 1,
+                votes: highestVoteCount
+            };
+        }
+
+        async function finishDayInTransaction(transaction, lobbyReference, lobby) {
+            const outcome = getDayEliminationOutcome(lobby);
+            const players = Array.isArray(lobby.players) ? lobby.players : [];
+            const eliminatedPlayerIds = Array.isArray(lobby.eliminatedPlayerIds) ? lobby.eliminatedPlayerIds : [];
+            let eliminatedPlayer = null;
+
+            if (outcome.player) {
+                const playerReference = doc(db, gamesCollectionName, currentLobbyId, 'players', outcome.player.id);
+                eliminatedPlayer = outcome.player;
+                transaction.update(playerReference, {
+                    isAlive: false,
+                    lastVote: true
+                });
+            }
+
+            transaction.update(lobbyReference, {
+                gamePhase: 'night',
+                dayEndVotes: [],
+                activeAccusation: null,
+                pausedDayTimeMs: null,
+                eliminatedPlayerIds: eliminatedPlayer
+                    ? Array.from(new Set(eliminatedPlayerIds.concat(eliminatedPlayer.id)))
+                    : eliminatedPlayerIds,
+                players: eliminatedPlayer
+                    ? players.map(function(player) {
+                        return player.id === eliminatedPlayer.id
+                            ? Object.assign({}, player, { isAlive: false, lastVote: true })
+                            : player;
+                    })
+                    : players,
+                lastDayResult: {
+                    id: crypto.randomUUID(),
+                    eliminatedPlayerId: eliminatedPlayer ? eliminatedPlayer.id : null,
+                    votes: outcome.votes,
+                    tied: outcome.tied
+                }
+            });
+        }
+
         function renderGamePlayers(lobby, phase) {
             const players = Array.isArray(lobby.players) ? lobby.players : [];
             const eliminatedPlayerIds = Array.isArray(lobby.eliminatedPlayerIds) ? lobby.eliminatedPlayerIds : [];
             const dayEndVotes = Array.isArray(lobby.dayEndVotes) ? lobby.dayEndVotes : [];
             const livingPlayers = players.filter(function(player) {
-                return !eliminatedPlayerIds.includes(player.id);
+                return isPlayerAlive(player, eliminatedPlayerIds);
             });
             const livingPlayerIds = livingPlayers.map(function(player) {
                 return player.id;
@@ -700,7 +951,15 @@
             });
             const majority = Math.floor(livingPlayers.length / 2) + 1;
             const hasVoted = currentPlayer && validVotes.includes(currentPlayer.id);
-            const isEliminated = currentPlayer && eliminatedPlayerIds.includes(currentPlayer.id);
+            const currentPlayerData = players.find(function(player) {
+                return currentPlayer && player.id === currentPlayer.id;
+            });
+            const isEliminated = currentPlayerData && !isPlayerAlive(currentPlayerData, eliminatedPlayerIds);
+            const canAccuse = Boolean(currentPlayerData && isPlayerAlive(currentPlayerData, eliminatedPlayerIds));
+            const accusationInProgress = Boolean(lobby.activeAccusation);
+            const accusationTotals = lobby.accusationTotals && typeof lobby.accusationTotals === 'object'
+                ? lobby.accusationTotals
+                : {};
 
             gamePlayersList.innerHTML = '';
             players.forEach(function(player) {
@@ -708,29 +967,269 @@
                 const skullSlot = document.createElement('span');
                 const playerName = document.createElement('span');
                 const playerState = document.createElement('span');
-                const eliminated = eliminatedPlayerIds.includes(player.id);
+                const accusationButton = document.createElement('button');
+                const eliminated = !isPlayerAlive(player, eliminatedPlayerIds);
 
                 playerItem.className = 'game-player-row';
+                accusationButton.className = 'accusation-button';
+                accusationButton.type = 'button';
+                accusationButton.textContent = 'Accusation';
+                accusationButton.disabled = phase !== 'day' || !canAccuse || accusationInProgress || eliminated || player.id === (currentPlayer && currentPlayer.id);
+                accusationButton.setAttribute('aria-label', 'Accuser ' + player.pseudo);
+                accusationButton.addEventListener('click', function() {
+                    startAccusation(player.id);
+                });
                 skullSlot.className = 'player-skull';
-                skullSlot.textContent = eliminated ? '☠' : '';
+                skullSlot.textContent = eliminated ? '💀' : '';
                 skullSlot.setAttribute('aria-label', eliminated ? 'Éliminé' : '');
-                playerName.textContent = player.pseudo;
+                playerName.textContent = player.pseudo + ' - Vote : ' + (Number(accusationTotals[player.id]) || 0);
                 playerState.className = 'player-state';
                 playerState.textContent = validVotes.includes(player.id) ? 'A voté' : '';
-                playerItem.appendChild(skullSlot);
+                playerItem.appendChild(accusationButton);
                 playerItem.appendChild(playerName);
+                playerItem.appendChild(skullSlot);
                 playerItem.appendChild(playerState);
                 gamePlayersList.appendChild(playerItem);
             });
 
             dayVoteCount.textContent = validVotes.length + ' / ' + livingPlayers.length + ' votes; majorité : ' + majority;
             voteDayEndButton.disabled = phase !== 'day' || !currentPlayer || isEliminated;
+            if (accusationInProgress) {
+                voteDayEndButton.disabled = true;
+            }
             voteDayEndButton.textContent = phase !== 'day'
                 ? 'La nuit est tombée'
                 : hasVoted
                     ? 'Retirer mon vote'
                     : 'Voter pour la fin de journée';
             gameMessage.textContent = '';
+        }
+
+        async function startAccusation(targetPlayerId) {
+            if (!currentLobbyId || !currentPlayer) {
+                return;
+            }
+
+            const lobbyReference = doc(db, gamesCollectionName, currentLobbyId);
+
+            try {
+                await runTransaction(db, async function(transaction) {
+                    const lobbySnapshot = await transaction.get(lobbyReference);
+                    const lobby = lobbySnapshot.data();
+
+                    if (!lobby || lobby.gameIsRunning !== true || (lobby.gamePhase || 'day') !== 'day') {
+                        throw new Error('ACCUSATION_HORS_JOUR');
+                    }
+
+                    if (lobby.activeAccusation) {
+                        throw new Error('ACCUSATION_EN_COURS');
+                    }
+
+                    const players = Array.isArray(lobby.players) ? lobby.players : [];
+                    const eliminatedPlayerIds = Array.isArray(lobby.eliminatedPlayerIds) ? lobby.eliminatedPlayerIds : [];
+                    const accuser = players.find(function(player) { return player.id === currentPlayer.id; });
+                    const target = players.find(function(player) { return player.id === targetPlayerId; });
+                    const deadline = lobby.dayEndsAt && typeof lobby.dayEndsAt.toMillis === 'function'
+                        ? lobby.dayEndsAt.toMillis()
+                        : Number(lobby.dayEndsAt);
+
+                    if (!accuser || !isPlayerAlive(accuser, eliminatedPlayerIds)) {
+                        throw new Error('ACCUSATEUR_ELIMINE');
+                    }
+
+                    if (!target || targetPlayerId === currentPlayer.id || !isPlayerAlive(target, eliminatedPlayerIds)) {
+                        throw new Error('CIBLE_INVALIDE');
+                    }
+
+                    if (!Number.isFinite(deadline) || deadline <= Date.now()) {
+                        throw new Error('JOUR_TERMINE');
+                    }
+
+                    const accusationStartedAt = Date.now();
+                    transaction.update(lobbyReference, {
+                        pausedDayTimeMs: deadline - accusationStartedAt,
+                        activeAccusation: {
+                            id: crypto.randomUUID(),
+                            accuserId: currentPlayer.id,
+                            targetId: targetPlayerId,
+                            startedAt: accusationStartedAt,
+                            endsAt: accusationStartedAt + accusationDurationMs,
+                            votes: {}
+                        }
+                    });
+                });
+            } catch (error) {
+                gameMessage.textContent = 'Impossible de lancer cette accusation.';
+                console.error(error);
+            }
+        }
+
+        async function castAccusationVote() {
+            if (!currentLobbyId || !currentPlayer) {
+                return;
+            }
+
+            try {
+                await runTransaction(db, async function(transaction) {
+                    const lobbyReference = doc(db, gamesCollectionName, currentLobbyId);
+                    const lobbySnapshot = await transaction.get(lobbyReference);
+                    const voterReference = doc(db, gamesCollectionName, currentLobbyId, 'players', currentPlayer.id);
+                    const voterSnapshot = await transaction.get(voterReference);
+                    const lobby = lobbySnapshot.data();
+                    const accusation = lobby && lobby.activeAccusation;
+                    const voterData = voterSnapshot.data();
+
+                    if (!lobby || !accusation || (lobby.gamePhase || 'day') !== 'day') {
+                        return;
+                    }
+
+                    const players = Array.isArray(lobby.players) ? lobby.players : [];
+                    const eliminatedPlayerIds = Array.isArray(lobby.eliminatedPlayerIds) ? lobby.eliminatedPlayerIds : [];
+                    const voter = players.find(function(player) { return player.id === currentPlayer.id; });
+                    if (!voter || !voterData) {
+                        return;
+                    }
+
+                    const voterAlive = voterData.isAlive !== false && isPlayerAlive(voter, eliminatedPlayerIds);
+                    const votes = accusation.votes && typeof accusation.votes === 'object'
+                        ? Object.assign({}, accusation.votes)
+                        : {};
+                    const hasVotedFor = votes[currentPlayer.id] === true;
+
+                    if (!voterAlive) {
+                        if (voterData.lastVote !== true || hasVotedFor) {
+                            return;
+                        }
+
+                        votes[currentPlayer.id] = true;
+                        transaction.update(voterReference, { lastVote: false });
+                        transaction.update(lobbyReference, {
+                            activeAccusation: Object.assign({}, accusation, { votes: votes }),
+                            players: players.map(function(player) {
+                                return player.id === currentPlayer.id
+                                    ? Object.assign({}, player, { lastVote: false })
+                                    : player;
+                            })
+                        });
+                        return;
+                    }
+
+                    votes[currentPlayer.id] = !hasVotedFor;
+                    transaction.update(lobbyReference, {
+                        activeAccusation: Object.assign({}, accusation, { votes: votes })
+                    });
+                });
+            } catch (error) {
+                accusationStatus.textContent = 'Impossible d’enregistrer votre vote.';
+                console.error(error);
+            }
+        }
+
+        function stopAccusationTimer() {
+            if (accusationInterval) {
+                clearInterval(accusationInterval);
+                accusationInterval = null;
+            }
+
+            currentAccusationId = null;
+        }
+
+        function startAccusationTimer(accusation, hostId) {
+            const deadline = Number(accusation.endsAt);
+            const canResolve = Boolean(currentPlayer && currentPlayer.id === hostId);
+            if (!Number.isFinite(deadline) || deadline <= 0) {
+                stopAccusationTimer();
+                accusationCountdown.textContent = '--:--';
+                return;
+            }
+
+            if (currentAccusationId === accusation.id && accusationInterval) {
+                updateAccusationTimer(accusation, canResolve);
+                return;
+            }
+
+            stopAccusationTimer();
+            currentAccusationId = accusation.id;
+            updateAccusationTimer(accusation, canResolve);
+            accusationInterval = setInterval(function() {
+                updateAccusationTimer(accusation, canResolve);
+            }, 1000);
+        }
+
+        function updateAccusationTimer(accusation, canResolve) {
+            const remainingMs = Math.max(0, Number(accusation.endsAt) - Date.now());
+            const remainingSeconds = Math.ceil(remainingMs / 1000);
+            const minutes = Math.floor(remainingSeconds / 60).toString().padStart(2, '0');
+            const seconds = (remainingSeconds % 60).toString().padStart(2, '0');
+
+            accusationCountdown.textContent = minutes + ':' + seconds;
+            if (remainingMs === 0 && canResolve) {
+                resolveAccusation(accusation.id);
+            }
+        }
+
+        async function resolveAccusation(accusationId) {
+            if (!currentLobbyId || !currentPlayer || accusationResolutionInProgress) {
+                return;
+            }
+
+            accusationResolutionInProgress = true;
+            try {
+                await runTransaction(db, async function(transaction) {
+                    const lobbyReference = doc(db, gamesCollectionName, currentLobbyId);
+                    const lobbySnapshot = await transaction.get(lobbyReference);
+                    const lobby = lobbySnapshot.data();
+                    const accusation = lobby && lobby.activeAccusation;
+
+                    if (!lobby || lobby.hostId !== currentPlayer.id || !accusation || accusation.id !== accusationId || Date.now() < Number(accusation.endsAt)) {
+                        return;
+                    }
+
+                    const players = Array.isArray(lobby.players) ? lobby.players : [];
+                    const eliminatedPlayerIds = Array.isArray(lobby.eliminatedPlayerIds) ? lobby.eliminatedPlayerIds : [];
+                    const livingPlayers = players.filter(function(player) {
+                        return isPlayerAlive(player, eliminatedPlayerIds);
+                    });
+                    const votes = accusation.votes && typeof accusation.votes === 'object' ? accusation.votes : {};
+                    const yesVotes = players.filter(function(player) { return votes[player.id] === true; }).length;
+                    const majority = Math.floor(livingPlayers.length / 2) + 1;
+                    const target = players.find(function(player) { return player.id === accusation.targetId; });
+                    const passed = yesVotes >= majority && target && isPlayerAlive(target, eliminatedPlayerIds);
+                    const accusationTotals = lobby.accusationTotals && typeof lobby.accusationTotals === 'object'
+                        ? Object.assign({}, lobby.accusationTotals)
+                        : {};
+
+                    if (passed) {
+                        accusationTotals[accusation.targetId] = (Number(accusationTotals[accusation.targetId]) || 0) + yesVotes;
+                    }
+                    const updates = {
+                        activeAccusation: null,
+                        pausedDayTimeMs: null,
+                        lastAccusationResult: {
+                            id: accusation.id,
+                            accuserId: accusation.accuserId,
+                            targetId: accusation.targetId,
+                            yesVotes: yesVotes,
+                            majority: majority,
+                            passed: passed
+                        },
+                        gamePhase: 'day',
+                        dayEndVotes: Array.isArray(lobby.dayEndVotes) ? lobby.dayEndVotes : [],
+                        dayEndsAt: Date.now() + Math.max(0, Number(lobby.pausedDayTimeMs) || 0)
+                    };
+
+                    if (passed) {
+                        updates.accusationTotals = accusationTotals;
+                    }
+
+                    transaction.update(lobbyReference, updates);
+                });
+            } catch (error) {
+                accusationStatus.textContent = 'Impossible de terminer le vote. Vérifiez les règles Firestore.';
+                console.error(error);
+            } finally {
+                accusationResolutionInProgress = false;
+            }
         }
 
         function stopDayTimer() {
@@ -775,7 +1274,7 @@
         }
 
         async function advanceToNight() {
-            if (!currentLobbyId || dayTransitionInProgress) {
+            if (!currentLobbyId || !currentPlayer || dayTransitionInProgress) {
                 return;
             }
 
@@ -786,19 +1285,24 @@
                     const lobbySnapshot = await transaction.get(lobbyReference);
                     const lobby = lobbySnapshot.data();
 
-                    if (!lobby || lobby.gameIsRunning !== true || (lobby.gamePhase || 'day') !== 'day') {
+                    if (!lobby || lobby.hostId !== currentPlayer.id || lobby.gameIsRunning !== true || (lobby.gamePhase || 'day') !== 'day' || lobby.activeAccusation) {
                         return;
                     }
 
                     const deadline = Number(lobby.dayEndsAt);
-                    if (!Number.isFinite(deadline) || Date.now() < deadline) {
+                    const players = Array.isArray(lobby.players) ? lobby.players : [];
+                    const eliminatedPlayerIds = Array.isArray(lobby.eliminatedPlayerIds) ? lobby.eliminatedPlayerIds : [];
+                    const livingPlayers = players.filter(function(player) { return isPlayerAlive(player, eliminatedPlayerIds); });
+                    const livingPlayerIds = livingPlayers.map(function(player) { return player.id; });
+                    const dayEndVotes = Array.isArray(lobby.dayEndVotes) ? lobby.dayEndVotes : [];
+                    const validDayEndVotes = dayEndVotes.filter(function(voterId) { return livingPlayerIds.includes(voterId); });
+                    const dayEndMajority = validDayEndVotes.length >= Math.floor(livingPlayers.length / 2) + 1;
+
+                    if ((!Number.isFinite(deadline) || Date.now() < deadline) && !dayEndMajority) {
                         return;
                     }
 
-                    transaction.update(lobbyReference, {
-                        gamePhase: 'night',
-                        dayEndVotes: []
-                    });
+                    await finishDayInTransaction(transaction, lobbyReference, lobby);
                 });
             } catch (error) {
                 console.error(error);
@@ -818,14 +1322,14 @@
                     const lobbySnapshot = await transaction.get(lobbyReference);
                     const lobby = lobbySnapshot.data();
 
-                    if (!lobby || lobby.gameIsRunning !== true || (lobby.gamePhase || 'day') !== 'day') {
+                    if (!lobby || lobby.gameIsRunning !== true || (lobby.gamePhase || 'day') !== 'day' || lobby.activeAccusation) {
                         return;
                     }
 
                     const players = Array.isArray(lobby.players) ? lobby.players : [];
                     const eliminatedPlayerIds = Array.isArray(lobby.eliminatedPlayerIds) ? lobby.eliminatedPlayerIds : [];
                     const livingPlayers = players.filter(function(player) {
-                        return !eliminatedPlayerIds.includes(player.id);
+                        return isPlayerAlive(player, eliminatedPlayerIds);
                     });
                     if (!livingPlayers.some(function(player) { return player.id === currentPlayer.id; })) {
                         return;
@@ -838,15 +1342,7 @@
                     const updatedVotes = votes.includes(currentPlayer.id)
                         ? votes.filter(function(voterId) { return voterId !== currentPlayer.id; })
                         : votes.concat(currentPlayer.id);
-                    const majority = Math.floor(livingPlayers.length / 2) + 1;
-                    const updates = { dayEndVotes: updatedVotes };
-
-                    if (updatedVotes.length >= majority) {
-                        updates.gamePhase = 'night';
-                        updates.dayEndVotes = [];
-                    }
-
-                    transaction.update(lobbyReference, updates);
+                    transaction.update(lobbyReference, { dayEndVotes: updatedVotes });
                 });
             } catch (error) {
                 gameMessage.textContent = 'Impossible d’enregistrer votre vote.';
@@ -1092,6 +1588,7 @@
             }
 
             stopDayTimer();
+            stopAccusationTimer();
 
             currentLobbyId = '';
             currentPlayer = null;
@@ -1304,6 +1801,7 @@
         });
 
         voteDayEndButton.addEventListener('click', castDayEndVote);
+        accusationVoteSwitch.addEventListener('click', castAccusationVote);
 
         document.getElementById('leave-lobby').addEventListener('click', async function() {
             if (!currentLobbyId || !currentPlayer) {
