@@ -197,6 +197,188 @@
             padding: 0.45rem;
             border-bottom: 1px solid rgba(255, 255, 255, 0.12);
         }
+        .game-layout {
+            width: min(1500px, 100vw);
+            height: 100vh;
+            padding: 1rem;
+            display: grid;
+            grid-template-columns: minmax(220px, 1fr) minmax(360px, 1.6fr) minmax(220px, 1fr);
+            grid-template-rows: auto minmax(0, 1fr) minmax(180px, 28vh);
+            grid-template-areas:
+                ". timer roles"
+                ". players roles"
+                ". system roles";
+            gap: 1rem;
+        }
+        .game-layout.hidden {
+            display: none;
+        }
+        .game-timer {
+            grid-area: timer;
+            align-self: center;
+            text-align: center;
+        }
+        .game-phase {
+            margin: 0 0 0.2rem;
+            color: #86b8e8;
+            font-weight: 700;
+        }
+        .game-timer output {
+            color: #f5c542;
+            font-size: 2.25rem;
+            font-weight: 700;
+            font-variant-numeric: tabular-nums;
+        }
+        .game-players,
+        .game-roles,
+        .system-chat {
+            min-width: 0;
+            background-color: #16213e;
+            border-radius: 8px;
+        }
+        .game-players {
+            grid-area: players;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+            padding: 1rem;
+        }
+        .game-section-heading {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: 1rem;
+        }
+        .game-section-heading h1,
+        .game-roles h2,
+        .system-chat h2 {
+            margin: 0;
+            font-size: 1.2rem;
+        }
+        .game-section-heading p {
+            margin: 0;
+            color: #86b8e8;
+            text-align: right;
+        }
+        .game-player-list {
+            flex: 1;
+            min-height: 0;
+            overflow-y: auto;
+            margin: 0.75rem 0 0;
+            padding: 0;
+            list-style: none;
+            color: white;
+        }
+        .game-player-row {
+            display: grid;
+            grid-template-columns: 1.5rem minmax(0, 1fr) auto;
+            align-items: center;
+            gap: 0.6rem;
+            min-height: 2.6rem;
+            padding: 0.35rem 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+        }
+        .player-skull {
+            color: #e94560;
+            text-align: center;
+        }
+        .player-state {
+            color: #86b8e8;
+            font-size: 0.8rem;
+        }
+        .game-vote-button {
+            flex: 0 0 auto;
+            width: 100%;
+            margin-top: 0.75rem;
+        }
+        .game-message {
+            min-height: 1.2rem;
+            margin: 0.4rem 0 0;
+            color: #f5c542;
+            font-size: 0.85rem;
+            text-align: center;
+        }
+        .game-roles {
+            grid-area: roles;
+            min-height: 0;
+            overflow-y: auto;
+            padding: 1.25rem;
+        }
+        .game-roles h2 {
+            text-align: center;
+        }
+        .game-role-category {
+            margin-top: 1.2rem;
+        }
+        .game-role-category h3 {
+            margin: 0 0 0.45rem;
+            color: #86b8e8;
+            font-size: 0.95rem;
+        }
+        .game-role-category.minion h3,
+        .game-role-category.demon h3 {
+            color: #e94560;
+        }
+        .game-role-category ul {
+            margin: 0;
+            padding-left: 1.2rem;
+            color: white;
+        }
+        .game-role-category li {
+            padding: 0.2rem 0;
+        }
+        .system-chat {
+            grid-area: system;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+            padding: 0.9rem 1rem;
+        }
+        .system-feed {
+            flex: 1;
+            min-height: 0;
+            overflow-y: auto;
+            margin: 0.55rem 0 0;
+            padding: 0;
+            list-style: none;
+            color: white;
+        }
+        .system-feed li {
+            padding: 0.45rem 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+            overflow-wrap: anywhere;
+        }
+        .system-feed time {
+            margin-right: 0.5rem;
+            color: #86b8e8;
+            font-size: 0.8rem;
+        }
+        .system-feed .system-empty {
+            color: #b8c3d8;
+            font-style: italic;
+        }
+        @media (max-width: 850px) {
+            body {
+                height: auto;
+                min-height: 100vh;
+            }
+            .game-layout {
+                width: 100%;
+                flex: 0 0 100%;
+                height: auto;
+                min-height: 100vh;
+                grid-template-columns: minmax(0, 1fr);
+                grid-template-rows: auto minmax(260px, 1fr) minmax(190px, 30vh) auto;
+                grid-template-areas:
+                    "timer"
+                    "players"
+                    "system"
+                    "roles";
+            }
+            .game-roles {
+                max-height: 360px;
+            }
+        }
     </style>
 </head>
 <body>
@@ -237,6 +419,30 @@
         </aside>
     </div>
 
+    <main class="game-layout hidden" id="game-view" aria-label="Partie en cours">
+        <header class="game-timer">
+            <p class="game-phase" id="game-phase-label">Jour en cours</p>
+            <output id="game-timer-value" aria-live="polite">05:00</output>
+        </header>
+        <section class="game-players" aria-labelledby="game-players-title">
+            <div class="game-section-heading">
+                <h1 id="game-players-title">Joueurs</h1>
+                <p id="day-vote-count"></p>
+            </div>
+            <ul class="game-player-list" id="game-players-list"></ul>
+            <button class="game-vote-button" type="button" id="vote-day-end">Voter pour la fin de journée</button>
+            <p class="game-message" id="game-message" role="status"></p>
+        </section>
+        <aside class="game-roles" aria-labelledby="game-roles-title">
+            <h2 id="game-roles-title">Rôles possibles</h2>
+            <div id="game-roles-list"></div>
+        </aside>
+        <section class="system-chat" aria-labelledby="system-chat-title">
+            <h2 id="system-chat-title">Journal du système</h2>
+            <ol class="system-feed" id="system-feed" aria-live="polite"></ol>
+        </section>
+    </main>
+
     <script type="module">
         import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js';
         import { getAuth, signInAnonymously } from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js';
@@ -250,6 +456,7 @@
             getFirestore,
             limit,
             onSnapshot,
+            orderBy,
             query,
             runTransaction,
             serverTimestamp,
@@ -272,6 +479,7 @@
         const db = getFirestore(app);
         const homeView = document.getElementById('home-view');
         const lobbyView = document.getElementById('lobby-view');
+        const gameView = document.getElementById('game-view');
         const joinForm = document.getElementById('join-form');
         const pseudoInput = document.getElementById('pseudo');
         const passwordInput = document.getElementById('game-password');
@@ -282,7 +490,16 @@
         const startGameButton = document.getElementById('start-game');
         const roleCounts = document.getElementById('role-counts');
         const rolesList = document.getElementById('roles-list');
+        const gamePhaseLabel = document.getElementById('game-phase-label');
+        const gameTimerValue = document.getElementById('game-timer-value');
+        const gamePlayersList = document.getElementById('game-players-list');
+        const gameRolesList = document.getElementById('game-roles-list');
+        const dayVoteCount = document.getElementById('day-vote-count');
+        const voteDayEndButton = document.getElementById('vote-day-end');
+        const gameMessage = document.getElementById('game-message');
+        const systemFeed = document.getElementById('system-feed');
         const gamesCollectionName = 'games';
+        const dayDurationMs = 5 * 60 * 1000;
         const roleCountDefaults = {
             townsfolk: 3,
             outsider: 2,
@@ -310,6 +527,10 @@
         let currentPlayer = null;
         let currentLobbyId = '';
         let stopLobbyListener = null;
+        let stopSystemMessagesListener = null;
+        let countdownInterval = null;
+        let currentDayDeadline = null;
+        let dayTransitionInProgress = false;
 
         sessionStorage.setItem('botc-player-id', playerId);
 
@@ -390,6 +611,10 @@
         }
 
         function renderLobby(lobby) {
+            const gameIsRunning = lobby.gameIsRunning === true;
+
+            lobbyView.classList.toggle('hidden', gameIsRunning);
+            gameView.classList.toggle('hidden', !gameIsRunning);
             lobbyPassword.textContent = lobby.password;
             playersList.innerHTML = '';
             startGameButton.classList.toggle('hidden', Boolean(lobby.gameIsRunning) || !currentPlayer || currentPlayer.id !== lobby.hostId);
@@ -400,6 +625,276 @@
                 const playerItem = document.createElement('li');
                 playerItem.textContent = player.pseudo;
                 playersList.appendChild(playerItem);
+            });
+
+            if (gameIsRunning) {
+                renderGame(lobby);
+            } else {
+                stopDayTimer();
+            }
+        }
+
+        function renderGame(lobby) {
+            const selectedRoles = Array.isArray(lobby.selectedRoles) ? lobby.selectedRoles : [];
+            const phase = lobby.gamePhase || 'day';
+
+            gamePhaseLabel.textContent = phase === 'night' ? 'La nuit est tombée' : 'Jour en cours';
+            renderGameRoles(selectedRoles);
+            renderGamePlayers(lobby, phase);
+
+            if (phase === 'day') {
+                const deadline = lobby.dayEndsAt && typeof lobby.dayEndsAt.toMillis === 'function'
+                    ? lobby.dayEndsAt.toMillis()
+                    : Number(lobby.dayEndsAt);
+                startDayTimer(deadline);
+            } else {
+                stopDayTimer();
+                gameTimerValue.textContent = 'Nuit';
+            }
+        }
+
+        function renderGameRoles(selectedRoles) {
+            gameRolesList.innerHTML = '';
+
+            Object.entries(roleCatalog).forEach(function(entry) {
+                const categoryKey = entry[0];
+                const category = entry[1];
+                const categoryRoles = category.roles.filter(function(roleName) {
+                    return selectedRoles.includes(roleName);
+                });
+
+                if (categoryRoles.length === 0) {
+                    return;
+                }
+
+                const categoryElement = document.createElement('section');
+                const categoryTitle = document.createElement('h3');
+                const categoryList = document.createElement('ul');
+                categoryElement.className = 'game-role-category ' + categoryKey;
+                categoryTitle.textContent = category.label;
+                categoryElement.appendChild(categoryTitle);
+
+                categoryRoles.forEach(function(roleName) {
+                    const roleItem = document.createElement('li');
+                    roleItem.textContent = roleName;
+                    categoryList.appendChild(roleItem);
+                });
+
+                categoryElement.appendChild(categoryList);
+                gameRolesList.appendChild(categoryElement);
+            });
+        }
+
+        function renderGamePlayers(lobby, phase) {
+            const players = Array.isArray(lobby.players) ? lobby.players : [];
+            const eliminatedPlayerIds = Array.isArray(lobby.eliminatedPlayerIds) ? lobby.eliminatedPlayerIds : [];
+            const dayEndVotes = Array.isArray(lobby.dayEndVotes) ? lobby.dayEndVotes : [];
+            const livingPlayers = players.filter(function(player) {
+                return !eliminatedPlayerIds.includes(player.id);
+            });
+            const livingPlayerIds = livingPlayers.map(function(player) {
+                return player.id;
+            });
+            const validVotes = dayEndVotes.filter(function(voterId) {
+                return livingPlayerIds.includes(voterId);
+            });
+            const majority = Math.floor(livingPlayers.length / 2) + 1;
+            const hasVoted = currentPlayer && validVotes.includes(currentPlayer.id);
+            const isEliminated = currentPlayer && eliminatedPlayerIds.includes(currentPlayer.id);
+
+            gamePlayersList.innerHTML = '';
+            players.forEach(function(player) {
+                const playerItem = document.createElement('li');
+                const skullSlot = document.createElement('span');
+                const playerName = document.createElement('span');
+                const playerState = document.createElement('span');
+                const eliminated = eliminatedPlayerIds.includes(player.id);
+
+                playerItem.className = 'game-player-row';
+                skullSlot.className = 'player-skull';
+                skullSlot.textContent = eliminated ? '☠' : '';
+                skullSlot.setAttribute('aria-label', eliminated ? 'Éliminé' : '');
+                playerName.textContent = player.pseudo;
+                playerState.className = 'player-state';
+                playerState.textContent = validVotes.includes(player.id) ? 'A voté' : '';
+                playerItem.appendChild(skullSlot);
+                playerItem.appendChild(playerName);
+                playerItem.appendChild(playerState);
+                gamePlayersList.appendChild(playerItem);
+            });
+
+            dayVoteCount.textContent = validVotes.length + ' / ' + livingPlayers.length + ' votes; majorité : ' + majority;
+            voteDayEndButton.disabled = phase !== 'day' || !currentPlayer || isEliminated;
+            voteDayEndButton.textContent = phase !== 'day'
+                ? 'La nuit est tombée'
+                : hasVoted
+                    ? 'Retirer mon vote'
+                    : 'Voter pour la fin de journée';
+            gameMessage.textContent = '';
+        }
+
+        function stopDayTimer() {
+            if (countdownInterval) {
+                clearInterval(countdownInterval);
+                countdownInterval = null;
+            }
+
+            currentDayDeadline = null;
+        }
+
+        function startDayTimer(deadline) {
+            if (!Number.isFinite(deadline) || deadline <= 0) {
+                stopDayTimer();
+                gameTimerValue.textContent = '--:--';
+                return;
+            }
+
+            if (currentDayDeadline === deadline && countdownInterval) {
+                updateDayTimer(deadline);
+                return;
+            }
+
+            stopDayTimer();
+            currentDayDeadline = deadline;
+            updateDayTimer(deadline);
+            countdownInterval = setInterval(function() {
+                updateDayTimer(deadline);
+            }, 1000);
+        }
+
+        function updateDayTimer(deadline) {
+            const remainingMs = Math.max(0, deadline - Date.now());
+            const remainingSeconds = Math.ceil(remainingMs / 1000);
+            const minutes = Math.floor(remainingSeconds / 60).toString().padStart(2, '0');
+            const seconds = (remainingSeconds % 60).toString().padStart(2, '0');
+
+            gameTimerValue.textContent = minutes + ':' + seconds;
+            if (remainingMs === 0) {
+                advanceToNight();
+            }
+        }
+
+        async function advanceToNight() {
+            if (!currentLobbyId || dayTransitionInProgress) {
+                return;
+            }
+
+            dayTransitionInProgress = true;
+            try {
+                await runTransaction(db, async function(transaction) {
+                    const lobbyReference = doc(db, gamesCollectionName, currentLobbyId);
+                    const lobbySnapshot = await transaction.get(lobbyReference);
+                    const lobby = lobbySnapshot.data();
+
+                    if (!lobby || lobby.gameIsRunning !== true || (lobby.gamePhase || 'day') !== 'day') {
+                        return;
+                    }
+
+                    const deadline = Number(lobby.dayEndsAt);
+                    if (!Number.isFinite(deadline) || Date.now() < deadline) {
+                        return;
+                    }
+
+                    transaction.update(lobbyReference, {
+                        gamePhase: 'night',
+                        dayEndVotes: []
+                    });
+                });
+            } catch (error) {
+                console.error(error);
+            } finally {
+                dayTransitionInProgress = false;
+            }
+        }
+
+        async function castDayEndVote() {
+            if (!currentLobbyId || !currentPlayer) {
+                return;
+            }
+
+            try {
+                await runTransaction(db, async function(transaction) {
+                    const lobbyReference = doc(db, gamesCollectionName, currentLobbyId);
+                    const lobbySnapshot = await transaction.get(lobbyReference);
+                    const lobby = lobbySnapshot.data();
+
+                    if (!lobby || lobby.gameIsRunning !== true || (lobby.gamePhase || 'day') !== 'day') {
+                        return;
+                    }
+
+                    const players = Array.isArray(lobby.players) ? lobby.players : [];
+                    const eliminatedPlayerIds = Array.isArray(lobby.eliminatedPlayerIds) ? lobby.eliminatedPlayerIds : [];
+                    const livingPlayers = players.filter(function(player) {
+                        return !eliminatedPlayerIds.includes(player.id);
+                    });
+                    if (!livingPlayers.some(function(player) { return player.id === currentPlayer.id; })) {
+                        return;
+                    }
+
+                    const livingPlayerIds = livingPlayers.map(function(player) { return player.id; });
+                    const votes = Array.isArray(lobby.dayEndVotes) ? lobby.dayEndVotes.filter(function(voterId) {
+                        return livingPlayerIds.includes(voterId);
+                    }) : [];
+                    const updatedVotes = votes.includes(currentPlayer.id)
+                        ? votes.filter(function(voterId) { return voterId !== currentPlayer.id; })
+                        : votes.concat(currentPlayer.id);
+                    const majority = Math.floor(livingPlayers.length / 2) + 1;
+                    const updates = { dayEndVotes: updatedVotes };
+
+                    if (updatedVotes.length >= majority) {
+                        updates.gamePhase = 'night';
+                        updates.dayEndVotes = [];
+                    }
+
+                    transaction.update(lobbyReference, updates);
+                });
+            } catch (error) {
+                gameMessage.textContent = 'Impossible d’enregistrer votre vote.';
+                console.error(error);
+            }
+        }
+
+        function subscribeToSystemMessages(lobbyId) {
+            if (stopSystemMessagesListener) {
+                stopSystemMessagesListener();
+            }
+
+            systemFeed.innerHTML = '';
+            if (!currentPlayer) {
+                return;
+            }
+
+            const messagesQuery = query(
+                collection(db, gamesCollectionName, lobbyId, 'players', currentPlayer.id, 'systemMessages'),
+                orderBy('createdAt')
+            );
+            stopSystemMessagesListener = onSnapshot(messagesQuery, function(snapshot) {
+                systemFeed.innerHTML = '';
+                if (snapshot.empty) {
+                    const emptyMessage = document.createElement('li');
+                    emptyMessage.className = 'system-empty';
+                    emptyMessage.textContent = 'Aucune information du système pour le moment.';
+                    systemFeed.appendChild(emptyMessage);
+                    return;
+                }
+
+                snapshot.forEach(function(messageSnapshot) {
+                    const messageData = messageSnapshot.data();
+                    const messageItem = document.createElement('li');
+                    if (messageData.createdAt && typeof messageData.createdAt.toDate === 'function') {
+                        const messageTime = document.createElement('time');
+                        messageTime.dateTime = messageData.createdAt.toDate().toISOString();
+                        messageTime.textContent = new Intl.DateTimeFormat('fr-FR', {
+                            hour: '2-digit',
+                            minute: '2-digit'
+                        }).format(messageData.createdAt.toDate());
+                        messageItem.appendChild(messageTime);
+                    }
+                    messageItem.appendChild(document.createTextNode(messageData.message || ''));
+                    systemFeed.appendChild(messageItem);
+                });
+            }, function(error) {
+                console.error(error);
             });
         }
 
@@ -502,6 +997,10 @@
                 validationErrors.push('Le rôle Diable doit être coché.');
             }
 
+            if (selectedTownsfolkCount < townsfolkCount + 3) {// Pour que le Diable puisse être choisi, il faut au moins 3 Villageois de plus que le nombre de Villageois requis.
+                validationErrors.push('il faut au moins ' + (townsfolkCount + 3) + ' Villageois coché(s).');
+            }
+
             const categoryRules = [
                 ['townsfolk', 'Villageois'],
                 ['outsider', 'Paria'],
@@ -520,24 +1019,32 @@
                 }
             });
 
-            if (selectedRoles.includes('Baron') && selectedOutsiderCount < outsiderCount + 2) {
+            if (selectedRoles.includes('Baron') && townsfolkCount < 2) {//Si le Baron est choisi, il faut pouvoir transformer 2 Villageois en Paria.
+                validationErrors.push('Baron sélectionné : il faut au moins 2 Villageois.');
+            }
+
+            if (selectedRoles.includes('Baron') && selectedOutsiderCount < outsiderCount + 2) {//Si le Baron est choisi, il faut au moins 2 Paria disponible de plus que le nombre de Paria obligatoirement présent.
                 validationErrors.push('Baron sélectionné : il faut au moins ' + (outsiderCount + 2) + ' Paria coché(s).');
             }
 
-            if (selectedRoles.includes('Ivrogne') && selectedTownsfolkCount < townsfolkCount + 1) {
-                validationErrors.push('Ivrogne sélectionné : il faut au moins ' + (townsfolkCount + 1) + ' Villageois coché(s).');
+            if (selectedRoles.includes('Ivrogne') && selectedTownsfolkCount < townsfolkCount + 4) {//Si l'Ivrogne est choisi, il doit croire qu'il est un Villageois autre que les 3 Villageois montré au Diable
+                validationErrors.push('Ivrogne sélectionné : il faut au moins ' + (townsfolkCount + 4) + ' Villageois coché(s).');
             }
 
-            if (selectedRoles.includes('Lavandiere') && townsfolkCount < 2) {
-                validationErrors.push('Lavandiere sélectionnée : il faut indiquer au moins 2 Villageois.');
+            if ((selectedRoles.includes('Lavandiere') || selectedRoles.includes('Vierge')) && townsfolkCount < 2) {///Ces deux roles sont des Villageois qui ont besoin de la présence d'au moins un autre Villageois pour être jouable.
+                validationErrors.push('Lavandiere ou Vierge sélectionnée : il faut indiquer au moins 2 Villageois.');
             }
 
-            if (selectedRoles.includes('Libraire') && outsiderCount < 1) {
+            if (selectedRoles.includes('Libraire') && outsiderCount < 1) {//Le Libraire est un Villageois qui a besoin de la présence d'au moins un Paria pour être jouable.
                 validationErrors.push('Libraire sélectionné : il faut indiquer au moins 1 Paria.');
             }
 
-            if ((selectedRoles.includes('Enqueteur') || selectedRoles.includes('Chef')) && minionCount < 1) {
+            if ((selectedRoles.includes('Enqueteur') || selectedRoles.includes('Chef')) && minionCount < 1) {//Ces deux roles sont des Villageois qui ont besoin de la présence d'au moins un Sbire pour être jouable.
                 validationErrors.push('Enqueteur ou Chef sélectionné : il faut indiquer au moins 1 Sbire.');
+            }
+
+            if((townsfolkCount + outsiderCount) <= (minionCount + 1)) {//S'il y a trop de Sbires par rapport au nombre de Villageois et Paria, la partie est impossible a gagner pour le village.
+                validationErrors.push('Le nombre de Villageois et Paria doit être supérieur au nombre de Sbires + 1.');
             }
 
             return validationErrors;
@@ -567,8 +1074,10 @@
             currentPlayer = player;
             homeView.classList.add('hidden');
             lobbyView.classList.remove('hidden');
+            gameView.classList.add('hidden');
             showMessage('');
             subscribeToLobby(lobbyId);
+            subscribeToSystemMessages(lobbyId);
         }
 
         function leaveLobbyView() {
@@ -577,10 +1086,18 @@
                 stopLobbyListener = null;
             }
 
+            if (stopSystemMessagesListener) {
+                stopSystemMessagesListener();
+                stopSystemMessagesListener = null;
+            }
+
+            stopDayTimer();
+
             currentLobbyId = '';
             currentPlayer = null;
             sessionStorage.removeItem('botc-lobby-id');
             lobbyView.classList.add('hidden');
+            gameView.classList.add('hidden');
             homeView.classList.remove('hidden');
         }
 
@@ -767,7 +1284,11 @@
                     }
 
                     transaction.update(lobbyReference, {
-                        gameIsRunning: true
+                        gameIsRunning: true,
+                        gamePhase: 'day',
+                        dayEndsAt: Date.now() + dayDurationMs,
+                        dayEndVotes: [],
+                        eliminatedPlayerIds: []
                     });
                 });
             } catch (error) {
@@ -779,6 +1300,8 @@
                 console.error(error);
             }
         });
+
+        voteDayEndButton.addEventListener('click', castDayEndVote);
 
         document.getElementById('leave-lobby').addEventListener('click', async function() {
             if (!currentLobbyId || !currentPlayer) {
