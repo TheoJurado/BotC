@@ -1137,6 +1137,12 @@
         function startAccusationTimer(accusation, hostId) {
             const deadline = Number(accusation.endsAt);
             const canResolve = Boolean(currentPlayer && currentPlayer.id === hostId);
+            
+            console.log("[Timer Debug] Initialisation du timer d'accusation :");
+            console.log("- Player ID actuel:", currentPlayer ? currentPlayer.id : 'null');
+            console.log("- Host ID de la partie:", hostId);
+            console.log("- Peut résoudre (canResolve):", canResolve);
+
             if (!Number.isFinite(deadline) || deadline <= 0) {
                 stopAccusationTimer();
                 accusationCountdown.textContent = '--:--';
@@ -1163,8 +1169,12 @@
             const seconds = (remainingSeconds % 60).toString().padStart(2, '0');
 
             accusationCountdown.textContent = minutes + ':' + seconds;
-            if (remainingMs === 0) {// && canResolve
-                resolveAccusation(accusation.id);
+            
+            if (remainingMs === 0) {
+                console.log("[Timer Debug] Temps écoulé. Tentative de résolution par l'hôte ?", canResolve);
+                if (canResolve) {
+                    resolveAccusation(accusation.id);
+                }
             }
         }
 
