@@ -930,6 +930,7 @@
                 gamePhase: 'night',
                 dayEndVotes: [],
                 accusedPlayerIds: [],
+                accusationTotals: {},
                 activeAccusation: null,
                 pausedDayTimeMs: null,
                 eliminatedPlayerIds: eliminatedPlayer
@@ -1258,14 +1259,14 @@
 
             accusationResolutionInProgress = true;
             try {
-                await runTransaction(db, async function(transaction) {
+                const resolvedAccusation = await runTransaction(db, async function(transaction) {
                     const lobbyReference = doc(db, gamesCollectionName, currentLobbyId);
                     const lobbySnapshot = await transaction.get(lobbyReference);
                     const lobby = lobbySnapshot.data();
                     const accusation = lobby && lobby.activeAccusation;
 
                     if (!lobby || lobby.hostId !== currentPlayer.id || !accusation || accusation.id !== accusationId || Date.now() < Number(accusation.endsAt)) {
-                        return;
+                        return null;
                     }
 
                     const players = Array.isArray(lobby.players) ? lobby.players : [];
@@ -1306,7 +1307,25 @@
                     }
 
                     transaction.update(lobbyReference, updates);
+                    const accuser = players.find(function(player) { return player.id === accusation.accuserId; });
+                    return {
+                        accuserName: accuser ? accuser.pseudo : 'Un joueur',
+                        targetName: target ? target.pseudo : 'un joueur',
+                        voters: players.filter(function(player) { return votes[player.id] === true; })
+                            .map(function(player) { return player.pseudo; })
+                    };
                 });
+
+                if (resolvedAccusation) {
+                    const voters = resolvedAccusation.voters.length > 0
+                        ? resolvedAccusation.voters.join(', ')
+                        : 'aucun joueur';
+                    await journalSpeakToAll(
+                        'Accusation initiée par ' + resolvedAccusation.accuserName
+                        + ' contre ' + resolvedAccusation.targetName
+                        + '. Joueurs ayant voté pour l’élimination : ' + voters + '.'
+                    );
+                }
             } catch (error) {
                 accusationStatus.textContent = 'Impossible de terminer le vote. Vérifiez les règles Firestore.';
                 console.error(error);
@@ -1476,6 +1495,58 @@
                 console.error(error);
             });
         }
+
+        async function sendSystemMessage(playerIds, messageText) {
+            const normalizedMessage = typeof messageText === 'string' ? messageText.trim() : '';
+            if (!currentLobbyId || !currentPlayer || !normalizedMessage) {
+                return false;
+            }
+
+            try {
+                const lobbySnapshot = await getDoc(doc(db, gamesCollectionName, currentLobbyId));
+                const lobby = lobbySnapshot.data();
+                if (!lobby || lobby.gameIsRunning !== true || currentPlayer.id !== lobby.hostId) {
+                    return false;
+                }
+
+                const lobbyPlayers = Array.isArray(lobby.players) ? lobby.players : [];
+                const requestedIds = playerIds === null
+                    ? lobbyPlayers.map(function(player) { return player.id; })
+                    : playerIds;
+                const recipientIds = Array.from(new Set(requestedIds)).filter(function(id) {
+                    return lobbyPlayers.some(function(player) { return player.id === id; });
+                });
+                if (recipientIds.length === 0) {
+                    return false;
+                }
+
+                const batch = writeBatch(db);
+                recipientIds.forEach(function(id) {
+                    const messages = collection(db, gamesCollectionName, currentLobbyId, 'players', id, 'systemMessages');
+                    batch.set(doc(messages), {
+                        message: normalizedMessage,
+                        createdAt: serverTimestamp()
+                    });
+                });
+                await batch.commit();
+                return true;
+            } catch (error) {
+                console.error(error);
+                return false;
+            }
+        }
+
+        async function journalSpeakToAll(messageText) {
+            return sendSystemMessage(null, messageText);
+        }
+
+        async function journalSpeakToThisPlayer(player, messageText) {
+            const playerId = player && typeof player === 'object' ? player.id : null;
+            return sendSystemMessage(playerId ? [playerId] : [], messageText);
+        }
+
+        window.journalSpeakToAll = journalSpeakToAll;
+        window.journalSpeakToThisPlayer = journalSpeakToThisPlayer;
 
         async function updateSelectedRole(roleName, isSelected) {
             if (!currentLobbyId || !currentPlayer) {
