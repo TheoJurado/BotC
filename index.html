@@ -223,6 +223,11 @@
             color: #86b8e8;
             font-weight: 700;
         }
+        .game-day-counter {
+            margin: 0;
+            color: #f5c542;
+            font-weight: 700;
+        }
         .game-timer output {
             color: #f5c542;
             font-size: 2.25rem;
@@ -507,6 +512,7 @@
 
     <main class="game-layout hidden" id="game-view" aria-label="Partie en cours">
         <header class="game-timer">
+            <p class="game-day-counter" id="game-day-counter">Jour 1</p>
             <p class="game-phase" id="game-phase-label">Jour en cours</p>
             <output id="game-timer-value" aria-live="polite">05:00</output>
         </header>
@@ -591,6 +597,7 @@
         const roleCounts = document.getElementById('role-counts');
         const rolesList = document.getElementById('roles-list');
         const gamePhaseLabel = document.getElementById('game-phase-label');
+        const gameDayCounter = document.getElementById('game-day-counter');
         const gameTimerValue = document.getElementById('game-timer-value');
         const gamePlayersList = document.getElementById('game-players-list');
         const gameRolesList = document.getElementById('game-roles-list');
@@ -750,8 +757,12 @@
             const selectedRoles = Array.isArray(lobby.selectedRoles) ? lobby.selectedRoles : [];
             const phase = lobby.gamePhase || 'day';
             const activeAccusation = lobby.activeAccusation || null;
+            const dayCounter = Number.isInteger(lobby.dayCounter) && lobby.dayCounter >= 0 ? lobby.dayCounter : 0;
 
             gamePhaseLabel.textContent = phase === 'night' ? 'La nuit est tombée' : 'Jour en cours';
+            gameDayCounter.textContent = phase === 'night'
+                ? 'Jours terminés : ' + dayCounter
+                : 'Jour ' + (dayCounter + 1);
             renderGameRoles(selectedRoles);
             renderGamePlayers(lobby, phase);
             renderAccusation(lobby, activeAccusation);
@@ -785,7 +796,9 @@
                 gameTimerValue.textContent = 'Nuit';
             }
 
-            if (phase === 'day' && !activeAccusation && currentPlayer && currentPlayer.id === lobby.hostId) {
+            if (lobby.dayEndPending && currentPlayer && currentPlayer.id === lobby.hostId) {
+                advanceToNight();
+            } else if (phase === 'day' && !activeAccusation && currentPlayer && currentPlayer.id === lobby.hostId) {
                 const players = Array.isArray(lobby.players) ? lobby.players : [];
                 const eliminatedPlayerIds = Array.isArray(lobby.eliminatedPlayerIds) ? lobby.eliminatedPlayerIds : [];
                 const livingPlayers = players.filter(function(player) { return isPlayerAlive(player, eliminatedPlayerIds); });
@@ -909,15 +922,13 @@
             };
         }
 
-        async function finishDayInTransaction(transaction, lobbyReference, lobby) {
-            const outcome = getDayEliminationOutcome(lobby);
+        async function finishDayInTransaction(transaction, lobbyReference, lobby, pendingDayEnd) {
             const players = Array.isArray(lobby.players) ? lobby.players : [];
             const eliminatedPlayerIds = Array.isArray(lobby.eliminatedPlayerIds) ? lobby.eliminatedPlayerIds : [];
-            let eliminatedPlayer = null;
-
-            if (outcome.player) {
-                eliminatedPlayer = outcome.player;
-            }
+            const eliminatedPlayer = players.find(function(player) {
+                return player.id === pendingDayEnd.eliminatedPlayerId;
+            }) || null;
+            const dayCounter = Number.isInteger(lobby.dayCounter) && lobby.dayCounter >= 0 ? lobby.dayCounter : 0;
 
             players.forEach(function(player) {
                 const playerReference = doc(db, gamesCollectionName, currentLobbyId, 'players', player.id);
@@ -928,6 +939,8 @@
 
             transaction.update(lobbyReference, {
                 gamePhase: 'night',
+                dayCounter: dayCounter + 1,
+                dayEndPending: null,
                 dayEndVotes: [],
                 accusedPlayerIds: [],
                 accusationTotals: {},
@@ -942,10 +955,11 @@
                         : Object.assign({}, player, { canAccuse: true });
                 }),
                 lastDayResult: {
-                    id: crypto.randomUUID(),
+                    id: pendingDayEnd.id,
+                    dayNumber: pendingDayEnd.dayNumber,
                     eliminatedPlayerId: eliminatedPlayer ? eliminatedPlayer.id : null,
-                    votes: outcome.votes,
-                    tied: outcome.tied
+                    votes: pendingDayEnd.votes,
+                    tied: pendingDayEnd.tied
                 }
             });
         }
@@ -994,7 +1008,7 @@
                 accusationButton.className = 'accusation-button';
                 accusationButton.type = 'button';
                 accusationButton.textContent = 'Accusation';
-                accusationButton.disabled = phase !== 'day' || !canAccuse || accusationInProgress || eliminated
+                accusationButton.disabled = phase !== 'day' || !canAccuse || accusationInProgress || lobby.dayEndPending || eliminated
                     || accusedPlayerIds.includes(player.id)
                     || player.id === (currentPlayer && currentPlayer.id);
                 accusationButton.setAttribute('aria-label', 'Accuser ' + player.pseudo);
@@ -1019,7 +1033,7 @@
             });
 
             dayVoteCount.textContent = validVotes.length + ' / ' + livingPlayers.length + ' votes; majorité : ' + majority;
-            voteDayEndButton.disabled = phase !== 'day' || !currentPlayer || isEliminated;
+            voteDayEndButton.disabled = phase !== 'day' || !currentPlayer || isEliminated || Boolean(lobby.dayEndPending);
             if (accusationInProgress) {
                 voteDayEndButton.disabled = true;
             }
@@ -1073,7 +1087,7 @@
                     const lobbySnapshot = await transaction.get(lobbyReference);
                     const lobby = lobbySnapshot.data();
 
-                    if (!lobby || lobby.gameIsRunning !== true || (lobby.gamePhase || 'day') !== 'day') {
+                    if (!lobby || lobby.gameIsRunning !== true || (lobby.gamePhase || 'day') !== 'day' || lobby.dayEndPending) {
                         throw new Error('ACCUSATION_HORS_JOUR');
                     }
 
@@ -1308,7 +1322,9 @@
 
                     transaction.update(lobbyReference, updates);
                     const accuser = players.find(function(player) { return player.id === accusation.accuserId; });
+                    const dayCounter = Number.isInteger(lobby.dayCounter) && lobby.dayCounter >= 0 ? lobby.dayCounter : 0;
                     return {
+                        dayNumber: dayCounter + 1,
                         accuserName: accuser ? accuser.pseudo : 'Un joueur',
                         targetName: target ? target.pseudo : 'un joueur',
                         voters: players.filter(function(player) { return votes[player.id] === true; })
@@ -1321,7 +1337,8 @@
                         ? resolvedAccusation.voters.join(', ')
                         : 'aucun joueur';
                     await journalSpeakToAll(
-                        'Accusation initiée par ' + resolvedAccusation.accuserName
+                        'Jour ' + resolvedAccusation.dayNumber + ' : '
+                        + 'Accusation initiée par ' + resolvedAccusation.accuserName
                         + ' contre ' + resolvedAccusation.targetName
                         + '. Joueurs ayant voté pour l’élimination : ' + voters + '.'
                     );
@@ -1382,13 +1399,17 @@
 
             dayTransitionInProgress = true;
             try {
-                await runTransaction(db, async function(transaction) {
-                    const lobbyReference = doc(db, gamesCollectionName, currentLobbyId);
+                const lobbyReference = doc(db, gamesCollectionName, currentLobbyId);
+                const pendingDayEnd = await runTransaction(db, async function(transaction) {
                     const lobbySnapshot = await transaction.get(lobbyReference);
                     const lobby = lobbySnapshot.data();
 
                     if (!lobby || lobby.hostId !== currentPlayer.id || lobby.gameIsRunning !== true || (lobby.gamePhase || 'day') !== 'day' || lobby.activeAccusation) {
-                        return;
+                        return null;
+                    }
+
+                    if (lobby.dayEndPending) {
+                        return lobby.dayEndPending;
                     }
 
                     const deadline = Number(lobby.dayEndsAt);
@@ -1401,12 +1422,53 @@
                     const dayEndMajority = validDayEndVotes.length >= Math.floor(livingPlayers.length / 2) + 1;
 
                     if ((!Number.isFinite(deadline) || Date.now() < deadline) && !dayEndMajority) {
+                        return null;
+                    }
+
+                    const outcome = getDayEliminationOutcome(lobby);
+                    const dayCounter = Number.isInteger(lobby.dayCounter) && lobby.dayCounter >= 0 ? lobby.dayCounter : 0;
+                    const pending = {
+                        id: crypto.randomUUID(),
+                        dayNumber: dayCounter + 1,
+                        eliminatedPlayerId: outcome.player ? outcome.player.id : null,
+                        eliminatedPlayerName: outcome.player ? outcome.player.pseudo : null,
+                        votes: outcome.votes,
+                        tied: outcome.tied
+                    };
+                    transaction.update(lobbyReference, { dayEndPending: pending });
+                    return pending;
+                });
+
+                if (!pendingDayEnd) {
+                    return;
+                }
+
+                const announcement = pendingDayEnd.eliminatedPlayerName
+                    ? 'Fin du jour ' + pendingDayEnd.dayNumber + ' : ' + pendingDayEnd.eliminatedPlayerName
+                        + ' est éliminé à la suite des votes (' + pendingDayEnd.votes + ' voix).'
+                    : pendingDayEnd.tied
+                        ? 'Fin du jour ' + pendingDayEnd.dayNumber + ' : égalité avec ' + pendingDayEnd.votes
+                            + ' voix, personne n’est éliminé.'
+                        : 'Fin du jour ' + pendingDayEnd.dayNumber
+                            + ' : aucun vote pour une élimination, personne n’est éliminé.';
+                const announcementSent = await journalSpeakToAll(announcement, 'day-end-' + pendingDayEnd.id);
+                if (!announcementSent) {
+                    gameMessage.textContent = 'Impossible d’envoyer l’annonce de fin de journée.';
+                    return;
+                }
+
+                await runTransaction(db, async function(transaction) {
+                    const lobbySnapshot = await transaction.get(lobbyReference);
+                    const lobby = lobbySnapshot.data();
+                    if (!lobby || lobby.hostId !== currentPlayer.id || !lobby.dayEndPending
+                        || lobby.dayEndPending.id !== pendingDayEnd.id || lobby.gamePhase !== 'day' || lobby.activeAccusation) {
                         return;
                     }
 
-                    await finishDayInTransaction(transaction, lobbyReference, lobby);
+                    await finishDayInTransaction(transaction, lobbyReference, lobby, pendingDayEnd);
                 });
             } catch (error) {
+                gameMessage.textContent = 'Impossible de terminer la journée.';
                 console.error(error);
             } finally {
                 dayTransitionInProgress = false;
@@ -1424,7 +1486,8 @@
                     const lobbySnapshot = await transaction.get(lobbyReference);
                     const lobby = lobbySnapshot.data();
 
-                    if (!lobby || lobby.gameIsRunning !== true || (lobby.gamePhase || 'day') !== 'day' || lobby.activeAccusation) {
+                    if (!lobby || lobby.gameIsRunning !== true || (lobby.gamePhase || 'day') !== 'day'
+                        || lobby.activeAccusation || lobby.dayEndPending) {
                         return;
                     }
 
@@ -1491,12 +1554,13 @@
                     messageItem.appendChild(document.createTextNode(messageData.message || ''));
                     systemFeed.appendChild(messageItem);
                 });
+                systemFeed.scrollTop = systemFeed.scrollHeight;
             }, function(error) {
                 console.error(error);
             });
         }
 
-        async function sendSystemMessage(playerIds, messageText) {
+        async function sendSystemMessage(playerIds, messageText, messageId) {
             const normalizedMessage = typeof messageText === 'string' ? messageText.trim() : '';
             if (!currentLobbyId || !currentPlayer || !normalizedMessage) {
                 return false;
@@ -1523,7 +1587,7 @@
                 const batch = writeBatch(db);
                 recipientIds.forEach(function(id) {
                     const messages = collection(db, gamesCollectionName, currentLobbyId, 'players', id, 'systemMessages');
-                    batch.set(doc(messages), {
+                    batch.set(messageId ? doc(messages, messageId) : doc(messages), {
                         message: normalizedMessage,
                         createdAt: serverTimestamp()
                     });
@@ -1536,8 +1600,8 @@
             }
         }
 
-        async function journalSpeakToAll(messageText) {
-            return sendSystemMessage(null, messageText);
+        async function journalSpeakToAll(messageText, messageId) {
+            return sendSystemMessage(null, messageText, messageId);
         }
 
         async function journalSpeakToThisPlayer(player, messageText) {
@@ -1940,6 +2004,8 @@
                     transaction.update(lobbyReference, {
                         gameIsRunning: true,
                         gamePhase: 'day',
+                        dayCounter: 0,
+                        dayEndPending: null,
                         dayEndsAt: Date.now() + dayDurationMs,
                         dayEndVotes: [],
                         accusedPlayerIds: [],
