@@ -2127,12 +2127,10 @@
                     }
 
                     const roleAssignments = assignRoles(lobby);
-                    const gameRoleCounts = Object.keys(roleCatalog).reduce(function(counts, categoryKey) {
-                        counts[categoryKey] = Object.values(roleAssignments).filter(function(assignment) {
-                            return roleCatalog[categoryKey].roles.includes(assignment.role);
-                        }).length;
-                        return counts;
-                    }, {});
+                    const gameRoleCounts = Object.assign(
+                        { demon: 1 },
+                        lobby.roleCounts || roleCountDefaults
+                    );
                     Object.entries(roleAssignments).forEach(function(entry) {
                         const playerReference = doc(db, gamesCollectionName, currentLobbyId, 'players', entry[0]);
                         transaction.update(playerReference, entry[1]);
