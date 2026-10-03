@@ -1899,10 +1899,13 @@
             currentPlayerRole.textContent = 'Votre rôle : non attribué';
             stopPlayerListener = onSnapshot(getPlayerReference(lobbyId), function(snapshot) {
                 const playerData = snapshot.exists() ? snapshot.data() : null;
+                const isIvrogne = Boolean(playerData && playerData.role === 'Ivrogne');
                 const role = playerData
-                    ? playerData.role === 'Ivrogne' ? playerData.secondaryRole + '.' : playerData.role
+                    ? isIvrogne ? playerData.secondaryRole : playerData.role
                     : '';
-                currentPlayerRole.textContent = role ? 'Votre rôle : ' + role : 'Votre rôle : non attribué';
+                currentPlayerRole.textContent = role
+                    ? 'Votre rôle : ' + role + (isIvrogne ? '.' : '')
+                    : 'Votre rôle : non attribué';
             }, function(error) {
                 console.error(error);
             });
