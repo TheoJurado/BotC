@@ -859,6 +859,7 @@
 
         function renderGame(lobby) {
             const selectedRoles = Array.isArray(lobby.selectedRoles) ? lobby.selectedRoles : [];
+            const gameRoleCounts = lobby.gameRoleCounts || Object.assign({ demon: 1 }, lobby.roleCounts || roleCountDefaults);
             const phase = lobby.gamePhase || 'day';
             const activeAccusation = lobby.activeAccusation || null;
             const dayCounter = Number.isInteger(lobby.dayCounter) && lobby.dayCounter >= 0 ? lobby.dayCounter : 0;
@@ -867,7 +868,7 @@
             gameDayCounter.textContent = phase === 'night'
                 ? 'Jours terminés : ' + dayCounter
                 : 'Jour ' + (dayCounter + 1);
-            renderGameRoles(selectedRoles);
+            renderGameRoles(selectedRoles, gameRoleCounts);
             renderGamePlayers(lobby, phase);
             renderAccusation(lobby, activeAccusation);
 
@@ -967,7 +968,7 @@
             gameTimerValue.textContent = minutes + ':' + seconds;
         }
 
-        function renderGameRoles(selectedRoles) {
+        function renderGameRoles(selectedRoles, roleCounts) {
             gameRolesList.innerHTML = '';
 
             Object.entries(roleCatalog).forEach(function(entry) {
@@ -985,7 +986,7 @@
                 const categoryTitle = document.createElement('h3');
                 const categoryList = document.createElement('ul');
                 categoryElement.className = 'game-role-category ' + categoryKey;
-                categoryTitle.textContent = category.label;
+                categoryTitle.textContent = (Number(roleCounts[categoryKey]) || 0) + ' ' + category.label;
                 categoryElement.appendChild(categoryTitle);
 
                 categoryRoles.forEach(function(roleName) {
@@ -2126,6 +2127,12 @@
                     }
 
                     const roleAssignments = assignRoles(lobby);
+                    const gameRoleCounts = Object.keys(roleCatalog).reduce(function(counts, categoryKey) {
+                        counts[categoryKey] = Object.values(roleAssignments).filter(function(assignment) {
+                            return roleCatalog[categoryKey].roles.includes(assignment.role);
+                        }).length;
+                        return counts;
+                    }, {});
                     Object.entries(roleAssignments).forEach(function(entry) {
                         const playerReference = doc(db, gamesCollectionName, currentLobbyId, 'players', entry[0]);
                         transaction.update(playerReference, entry[1]);
@@ -2140,6 +2147,7 @@
 
                     transaction.update(lobbyReference, {
                         gameIsRunning: true,
+                        gameRoleCounts: gameRoleCounts,
                         gamePhase: 'day',
                         dayCounter: 0,
                         dayEndPending: null,
