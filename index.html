@@ -1816,7 +1816,10 @@
             }
 
             if (selectedTownsfolkCount < townsfolkCount + 3) {// Pour que le Diable puisse être choisi, il faut au moins 3 Villageois de plus que le nombre de Villageois requis.
-                validationErrors.push('il faut au moins ' + (townsfolkCount + 3) + ' Villageois coché(s).');
+                validationErrors.push('Il faut au moins ' + (townsfolkCount + 3) + ' Villageois coché(s).');
+            }
+            if (townsfolkCount < 3) {// Pour que le Diable puisse faire croire qu'il est Villageois, il doit y avoir des Villageois
+                validationErrors.push('Il faut au moins 2 Villageois présent.');
             }
 
             const categoryRules = [
