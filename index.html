@@ -228,6 +228,14 @@
             color: #f5c542;
             font-weight: 700;
         }
+        #current-player-role {
+            margin: 0.55rem 0;
+            padding: 0.4rem 0.65rem;
+            border-left: 3px solid #f5c542;
+            background-color: rgba(15, 52, 96, 0.8);
+            color: white;
+            font-weight: 700;
+        }
         .game-timer output {
             color: #f5c542;
             font-size: 2.25rem;
@@ -514,7 +522,7 @@
         <header class="game-timer">
             <p class="game-day-counter" id="game-day-counter">Jour 1</p>
             <p class="game-phase" id="game-phase-label">Jour en cours</p>
-            <p id="current-player-role">Votre rôle : non attribué</p>
+            <p id="current-player-role" aria-live="polite">Votre rôle : non attribué</p>
             <output id="game-timer-value" aria-live="polite">05:00</output>
         </header>
         <section class="game-players" aria-labelledby="game-players-title">
