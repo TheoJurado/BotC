@@ -1900,7 +1900,7 @@
             stopPlayerListener = onSnapshot(getPlayerReference(lobbyId), function(snapshot) {
                 const playerData = snapshot.exists() ? snapshot.data() : null;
                 const role = playerData
-                    ? playerData.role === 'Ivrogne' ? playerData.secondaryRole : playerData.role
+                    ? playerData.role === 'Ivrogne' ? playerData.secondaryRole + '.' : playerData.role
                     : '';
                 currentPlayerRole.textContent = role ? 'Votre rôle : ' + role : 'Votre rôle : non attribué';
             }, function(error) {
