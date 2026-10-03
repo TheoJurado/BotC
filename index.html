@@ -514,6 +514,7 @@
         <header class="game-timer">
             <p class="game-day-counter" id="game-day-counter">Jour 1</p>
             <p class="game-phase" id="game-phase-label">Jour en cours</p>
+            <p id="current-player-role">Votre rôle : non attribué</p>
             <output id="game-timer-value" aria-live="polite">05:00</output>
         </header>
         <section class="game-players" aria-labelledby="game-players-title">
@@ -598,6 +599,7 @@
         const rolesList = document.getElementById('roles-list');
         const gamePhaseLabel = document.getElementById('game-phase-label');
         const gameDayCounter = document.getElementById('game-day-counter');
+        const currentPlayerRole = document.getElementById('current-player-role');
         const gameTimerValue = document.getElementById('game-timer-value');
         const gamePlayersList = document.getElementById('game-players-list');
         const gameRolesList = document.getElementById('game-roles-list');
@@ -643,6 +645,7 @@
         let currentPlayer = null;
         let currentLobbyId = '';
         let stopLobbyListener = null;
+        let stopPlayerListener = null;
         let stopSystemMessagesListener = null;
         let countdownInterval = null;
         let currentDayDeadline = null;
@@ -662,6 +665,99 @@
             return Object.values(roleCatalog).flatMap(function(category) {
                 return category.roles;
             });
+        }
+
+        function shuffle(items) {
+            const shuffledItems = items.slice();
+            for (let index = shuffledItems.length - 1; index > 0; index -= 1) {
+                const randomIndex = Math.floor(Math.random() * (index + 1));
+                [shuffledItems[index], shuffledItems[randomIndex]] = [shuffledItems[randomIndex], shuffledItems[index]];
+            }
+            return shuffledItems;
+        }
+
+        function assignRoles(lobby) {
+            const players = Array.isArray(lobby.players) ? lobby.players : [];
+            const selectedRoles = Array.isArray(lobby.selectedRoles) ? Array.from(new Set(lobby.selectedRoles)) : [];
+            const roleCounts = lobby.roleCounts || roleCountDefaults;
+            const categoryOrder = ['demon', 'minion', 'outsider', 'townsfolk'];
+            const roleCountsByCategory = {
+                demon: 1,
+                minion: Number(roleCounts.minion),
+                outsider: Number(roleCounts.outsider),
+                townsfolk: Number(roleCounts.townsfolk)
+            };
+            const expectedPlayerCount = Object.values(roleCountsByCategory).reduce(function(total, count) {
+                return total + count;
+            }, 0);
+
+            if (Object.values(roleCountsByCategory).some(function(count) {
+                return !Number.isInteger(count) || count < 0;
+            })) {
+                throw new Error('Les nombres de rôles configurés sont invalides.');
+            }
+
+            if (players.length !== expectedPlayerCount) {
+                throw new Error('Il faut exactement ' + expectedPlayerCount + ' joueurs pour les quotas configurés.');
+            }
+
+            const selectedRolesByCategory = {};
+            categoryOrder.forEach(function(categoryKey) {
+                selectedRolesByCategory[categoryKey] = roleCatalog[categoryKey].roles.filter(function(roleName) {
+                    return selectedRoles.includes(roleName);
+                });
+
+                if (selectedRolesByCategory[categoryKey].length < roleCountsByCategory[categoryKey]) {
+                    throw new Error('Pas assez de rôles cochés dans la catégorie « ' + roleCatalog[categoryKey].label.split(' (')[0] + ' ».');
+                }
+            });
+
+            const shuffledPlayers = shuffle(players);
+            const assignments = {};
+            let playerIndex = 0;
+            let ivrognePlayerId = null;
+
+            categoryOrder.forEach(function(categoryKey) {
+                const chosenRoles = shuffle(selectedRolesByCategory[categoryKey])
+                    .slice(0, roleCountsByCategory[categoryKey]);
+                chosenRoles.forEach(function(roleName) {
+                    const assignedPlayerId = shuffledPlayers[playerIndex].id;
+                    assignments[assignedPlayerId] = {
+                        role: roleName,
+                        secondaryRole: ''
+                    };
+
+                    //cas particulier du Baron
+                    if(roleName === 'Baron'){
+                        roleCountsByCategory.outsider +=2;
+                        roleCountsByCategory.townsfolk -=2;
+                    }
+
+                    //cas particulier de l'Ivrogne
+                    if(roleName === 'Ivrogne'){
+                        ivrognePlayerId = assignedPlayerId;
+                    }
+                    
+                    playerIndex += 1;
+                });
+            });
+
+            if (ivrognePlayerId) {
+                const assignedTownsfolkRoles = new Set(Object.values(assignments)
+                    .map(function(assignment) { return assignment.role; })
+                    .filter(function(roleName) { return roleCatalog.townsfolk.roles.includes(roleName); }));
+                const availableFalseRoles = selectedRolesByCategory.townsfolk.filter(function(roleName) {
+                    return !assignedTownsfolkRoles.has(roleName);
+                });
+
+                if (availableFalseRoles.length === 0) {
+                    throw new Error('Pas assez de rôles Villageois cochés pour attribuer un rôle fictif à l’Ivrogne.');
+                }
+
+                assignments[ivrognePlayerId].secondaryRole = shuffle(availableFalseRoles)[0];
+            }
+
+            return assignments;
         }
 
         function renderRoleCounts(lobby) {
@@ -1784,6 +1880,23 @@
             });
         }
 
+        function subscribeToPlayerRole(lobbyId) {
+            if (stopPlayerListener) {
+                stopPlayerListener();
+            }
+
+            currentPlayerRole.textContent = 'Votre rôle : non attribué';
+            stopPlayerListener = onSnapshot(getPlayerReference(lobbyId), function(snapshot) {
+                const playerData = snapshot.exists() ? snapshot.data() : null;
+                const role = playerData
+                    ? playerData.role === 'Ivrogne' ? playerData.secondaryRole : playerData.role
+                    : '';
+                currentPlayerRole.textContent = role ? 'Votre rôle : ' + role : 'Votre rôle : non attribué';
+            }, function(error) {
+                console.error(error);
+            });
+        }
+
         function enterLobby(lobbyId, player) {
             currentPlayer = player;
             homeView.classList.add('hidden');
@@ -1791,6 +1904,7 @@
             gameView.classList.add('hidden');
             showMessage('');
             subscribeToLobby(lobbyId);
+            subscribeToPlayerRole(lobbyId);
             subscribeToSystemMessages(lobbyId);
         }
 
@@ -1798,6 +1912,11 @@
             if (stopLobbyListener) {
                 stopLobbyListener();
                 stopLobbyListener = null;
+            }
+
+            if (stopPlayerListener) {
+                stopPlayerListener();
+                stopPlayerListener = null;
             }
 
             if (stopSystemMessagesListener) {
@@ -1992,14 +2111,18 @@
                         return;
                     }
 
-                    /* MODE TEST TEMPORAIRE : réactiver ces validations avant les vraies parties.
+                    const roleAssignments = assignRoles(lobby);
+                    Object.entries(roleAssignments).forEach(function(entry) {
+                        const playerReference = doc(db, gamesCollectionName, currentLobbyId, 'players', entry[0]);
+                        transaction.update(playerReference, entry[1]);
+                    });
+
                     const validationErrors = validateGameConfiguration(lobby);
                     if (validationErrors.length > 0) {
                         const validationError = new Error('CONFIGURATION_INVALIDE');
                         validationError.validationErrors = validationErrors;
                         throw validationError;
                     }
-                    */
 
                     transaction.update(lobbyReference, {
                         gameIsRunning: true,
@@ -2015,6 +2138,8 @@
             } catch (error) {
                 if (error.message === 'CONFIGURATION_INVALIDE') {
                     showMessage('Partie impossible à lancer : ' + error.validationErrors.join(' '));
+                } else if (error.message && (error.message.startsWith('Il faut exactement ') || error.message.startsWith('Pas assez de rôles') || error.message.startsWith('Les nombres de rôles configurés'))) {
+                    showMessage('Partie impossible à lancer : ' + error.message);
                 } else {
                     showMessage('Seul l’hôte peut lancer la partie.');
                 }
